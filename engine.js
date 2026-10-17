@@ -1,47 +1,59 @@
 
-/* DrDer-light — Isometric Maze Engine */
+'use strict';
+
 (() => {
-  "use strict";
+  const app = window.DrDerLight;
+  if (!app || !app.canvas || !app.ctx) {
+    console.error('DrDer-light: canvas interface not found.');
+    return;
+  }
 
-  const UI = window.DrDerLight;
-  if (!UI) return;
+  const canvas = app.canvas;
+  const ctx = app.ctx;
 
-  const canvas = UI.canvas;
-  const ctx = UI.ctx;
-
-  const GOLD = "#f4c64e";
-  const BRIGHT = "#fff0a6";
-  const DARK = "#090909";
-
-  const DIRS = {
-    up:    [0, -1],
-    down:  [0, 1],
-    left:  [-1, 0],
-    right: [1, 0]
+  const CONFIG = {
+    columns: 9,
+    rows: 9,
+    tileWidth: 48,
+    tileHeight: 24,
+    blockHeight: 16,
+    crystalCount: 2,
+    colors: {
+      background: '#080808',
+      top: '#191919',
+      side: '#0d0d0d',
+      edge: '#373020',
+      gold: '#e9b83f',
+      glow: '#ffdb70',
+      path: '#a87920',
+      white: '#fff4cf',
+      red: '#ff6666'
+    }
   };
 
-  const TILE_W = 42;
-  const TILE_H = 22;
-  const BLOCK_H = 19;
-
-  let level = 1;
   let maze = [];
-  let player = { x: 1, y: 1 };
+  let player = { x: 0, y: 0 };
   let crystals = [];
-  let portal = { x: 1, y: 1 };
   let collected = 0;
-  let startedAt = 0;
-  let elapsedBeforePause = 0;
-  let paused = false;
+  let level = 1;
+  let moves = 0;
   let won = false;
-  let lastMove = 0;
+  let paused = false;
+  let lastTime = 0;
+  let elapsed = 0;
   let animationId = 0;
   let lastFrame = 0;
+  let message = '';
+  let messageUntil = 0;
 
-  const COLS = 9;
-  const ROWS = 9;
+  const directions = {
+    up:    { x: 0, y: -1 },
+    down:  { x: 0, y: 1 },
+    left:  { x: -1, y: 0 },
+    right: { x: 1, y: 0 }
+  };
 
-  function rand(max) {
+  function randomInt(max) {
     return Math.floor(Math.random() * max);
   }
 
@@ -50,335 +62,199 @@
   }
 
   function inside(x, y) {
-    return x >= 0 && y >= 0 && x < COLS && y < ROWS;
+    return x >= 0 && y >= 0 &&
+      x < CONFIG.columns && y < CONFIG.rows;
   }
 
-  function shuffle(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-      const j = rand(i + 1);
-      [array[i], array[j]] = [array[j], array[i]];
-    }
-    return array;
+  function makeCell(x, y) {
+    return {
+      x,
+      y,
+      height: 0,
+      path: false,
+      visited: false
+    };
   }
 
-  /*
-   * توليد متاهة كاملة المسارات باستخدام DFS.
-   * كل خلية لها أربعة جدران، ثم تُفتح الممرات
-   * مع ضمان وجود طريق بين البداية والبوابة.
-   */
+  function neighbors(x, y) {
+    return Object.values(directions)
+      .map(d => ({ x: x + d.x, y: y + d.y }))
+      .filter(p => inside(p.x, p.y));
+  }
+
   function generateMaze() {
-    const grid = Array.from({ length: ROWS }, () =>
-      Array.from({ length: COLS }, () => ({
-        walls: [true, true, true, true],
-        visited: false,
-        height: 0
-      }))
-    );
+    maze = [];
 
-    // ترتيب الجدران: أعلى، يمين، أسفل، يسار.
-    const dirs = [
-      { dx: 0, dy: -1, wall: 0, opposite: 2 },
-      { dx: 1, dy: 0, wall: 1, opposite: 3 },
-      { dx: 0, dy: 1, wall: 2, opposite: 0 },
-      { dx: -1, dy: 0, wall: 3, opposite: 1 }
-    ];
+    for (let y = 0; y < CONFIG.rows; y++) {
+      const row = [];
+      for (let x = 0; x < CONFIG.columns; x++) {
+        row.push(makeCell(x, y));
+      }
+      maze.push(row);
+    }
 
+    /*
+     * Create a connected winding path using depth-first search.
+     * Every visited cell belongs to the walkable network.
+     */
     const stack = [{ x: 0, y: 0 }];
-    grid[0][0].visited = true;
+    maze[0][0].visited = true;
+    maze[0][0].path = true;
 
     while (stack.length) {
       const current = stack[stack.length - 1];
-      const options = shuffle(dirs.filter(d => {
-        const x = current.x + d.dx;
-        const y = current.y + d.dy;
-        return inside(x, y) && !grid[y][x].visited;
-      }));
+
+      const options = neighbors(current.x, current.y)
+        .filter(p => !maze[p.y][p.x].visited);
 
       if (!options.length) {
         stack.pop();
         continue;
       }
 
-      const d = options[0];
-      const nx = current.x + d.dx;
-      const ny = current.y + d.dy;
+      const next = options[randomInt(options.length)];
+      const cell = maze[next.y][next.x];
 
-      grid[current.y][current.x].walls[d.wall] = false;
-      grid[ny][nx].walls[d.opposite] = false;
-      grid[ny][nx].visited = true;
-      stack.push({ x: nx, y: ny });
-    }
-
-    // تحويل المتاهة إلى خلايا بممرات وكتل.
-    const result = grid.map((row, y) => row.map((cell, x) => {
-      let height = 1 + rand(3);
-
-      // لا نضع كتلًا مرتفعة عند البداية أو البوابة.
-      if ((x === 0 && y === 0) ||
-          (x === COLS - 1 && y === ROWS - 1)) {
-        height = 0;
-      }
-
-      return {
-        walls: cell.walls.slice(),
-        height,
-        path: false
-      };
-    }));
-
-    // مسارات المتاهة نفسها تكون منخفضة ومضيئة.
-    result.forEach(row => row.forEach(cell => {
+      cell.visited = true;
       cell.path = true;
-    }));
-
-    return result;
-  }
-
-  function reachableFromStart(targetX, targetY) {
-    const seen = new Set();
-    const queue = [{ x: 0, y: 0 }];
-    seen.add(key(0, 0));
-
-    while (queue.length) {
-      const p = queue.shift();
-      if (p.x === targetX && p.y === targetY) return true;
-
-      const cell = maze[p.y][p.x];
-
-      for (let i = 0; i < 4; i++) {
-        if (cell.walls[i]) continue;
-
-        const [dx, dy] = [
-          [0, -1],
-          [1, 0],
-          [0, 1],
-          [-1, 0]
-        ][i];
-
-        const x = p.x + dx;
-        const y = p.y + dy;
-        if (!inside(x, y)) continue;
-
-        // لا يمكن عبور كتلة أعلى من حد القفزة.
-        if (Math.abs(cell.height - maze[y][x].height) > 1) {
-          continue;
-        }
-
-        const k = key(x, y);
-        if (seen.has(k)) continue;
-
-        seen.add(k);
-        queue.push({ x, y });
-      }
+      stack.push(next);
     }
 
-    return false;
-  }
-
-  function carveGuaranteedRoute() {
-    // طريق مضمون من البداية إلى البوابة.
+    /*
+     * Keep the main route reachable regardless of random layout.
+     * The route is guaranteed to move right/down to the exit.
+     */
     let x = 0;
     let y = 0;
 
-    while (x < COLS - 1 || y < ROWS - 1) {
-      const canRight = x < COLS - 1;
-      const canDown = y < ROWS - 1;
+    maze[y][x].path = true;
 
-      let goRight = canRight && (!canDown || Math.random() < 0.5);
+    while (x < CONFIG.columns - 1 || y < CONFIG.rows - 1) {
+      const canRight = x < CONFIG.columns - 1;
+      const canDown = y < CONFIG.rows - 1;
 
-      const nx = x + (goRight ? 1 : 0);
-      const ny = y + (goRight ? 0 : 1);
-
-      if (goRight) {
-        maze[y][x].walls[1] = false;
-        maze[ny][nx].walls[3] = false;
+      if (canRight && canDown) {
+        if (Math.random() < 0.5) x++;
+        else y++;
+      } else if (canRight) {
+        x++;
       } else {
-        maze[y][x].walls[2] = false;
-        maze[ny][nx].walls[0] = false;
+        y++;
       }
 
-      // خفض فرق الارتفاعات على المسار المضمون.
-      maze[ny][nx].height = Math.min(
-        maze[ny][nx].height,
-        maze[y][x].height + 1
-      );
-
-      x = nx;
-      y = ny;
+      maze[y][x].path = true;
     }
-  }
 
-  function newLevel() {
-    cancelAnimationFrame(animationId);
-
-    maze = generateMaze();
-    carveGuaranteedRoute();
+    /*
+     * Assign modest heights only to non-path blocks.
+     * Walkable cells remain level to keep movement predictable.
+     */
+    for (let row = 0; row < CONFIG.rows; row++) {
+      for (let col = 0; col < CONFIG.columns; col++) {
+        const cell = maze[row][col];
+        cell.height = cell.path ? 0 : 1 + randomInt(3);
+        cell.visited = false;
+      }
+    }
 
     player = { x: 0, y: 0 };
-    portal = { x: COLS - 1, y: ROWS - 1 };
+    maze[0][0].path = true;
+    maze[0][0].height = 0;
 
-    // البلورات موضوعة على خلايا قابلة للوصول.
+    crystals = [];
+    collected = 0;
+    moves = 0;
+    won = false;
+    paused = false;
+    elapsed = 0;
+    lastTime = performance.now();
+
+    /*
+     * Place crystals only on walkable cells and away from the start
+     * and exit, so they can always be collected.
+     */
+    const exit = { x: CONFIG.columns - 1, y: CONFIG.rows - 1 };
     const candidates = [];
 
-    for (let y = 1; y < ROWS - 1; y++) {
-      for (let x = 1; x < COLS - 1; x++) {
-        if ((x + y) % 2 === 0) {
-          candidates.push({ x, y, taken: false });
-        }
+    for (let row = 0; row < CONFIG.rows; row++) {
+      for (let col = 0; col < CONFIG.columns; col++) {
+        const cell = maze[row][col];
+
+        if (!cell.path) continue;
+        if (key(col, row) === key(0, 0)) continue;
+        if (key(col, row) === key(exit.x, exit.y)) continue;
+
+        candidates.push({ x: col, y: row });
       }
     }
 
-    shuffle(candidates);
+    /*
+     * Prefer crystals separated from each other and from the start.
+     */
+    while (crystals.length < CONFIG.crystalCount && candidates.length) {
+      const index = randomInt(candidates.length);
+      const candidate = candidates.splice(index, 1)[0];
 
-    crystals = [];
+      const separated = crystals.every(c =>
+        Math.abs(c.x - candidate.x) +
+        Math.abs(c.y - candidate.y) >= 3
+      );
 
-    for (const c of candidates) {
-      if (crystals.length >= 2) break;
-      if (reachableFromStart(c.x, c.y)) {
+      if (separated || candidates.length === 0) {
         crystals.push({
-          x: c.x,
-          y: c.y,
-          active: true,
+          x: candidate.x,
+          y: candidate.y,
+          taken: false,
           phase: Math.random() * Math.PI * 2
         });
       }
     }
 
-    // ضمان وجود بلورتين حتى في الحالات النادرة.
-    while (crystals.length < 2) {
-      const c = candidates.find(p =>
-        !crystals.some(k => k.x === p.x && k.y === p.y)
-      );
-      if (!c) break;
-      crystals.push({
-        x: c.x,
-        y: c.y,
-        active: true,
-        phase: Math.random() * Math.PI * 2
-      });
-    }
+    /*
+     * There are many path cells in a 9x9 board. This fallback
+     * guarantees exactly two crystals if the spacing rule is restrictive.
+     */
+    while (crystals.length < CONFIG.crystalCount) {
+      const candidate = candidates.pop();
+      if (!candidate) break;
 
-    collected = 0;
-    won = false;
-    paused = false;
-    elapsedBeforePause = 0;
-    startedAt = performance.now();
-    lastMove = 0;
-
-    UI.updateStats({
-      level,
-      crystals: collected,
-      totalCrystals: crystals.length,
-      time: "00:00",
-      status: "البوابة مغلقة",
-      message: "اجمع البلورات الذهبية للوصول إلى البوابة"
-    });
-
-    render(0);
-    animationId = requestAnimationFrame(loop);
-  }
-
-  function canMove(x, y, nx, ny) {
-    if (!inside(nx, ny)) return false;
-
-    const dx = nx - x;
-    const dy = ny - y;
-    let wall;
-
-    if (dx === 1) wall = 1;
-    else if (dx === -1) wall = 3;
-    else if (dy === 1) wall = 2;
-    else wall = 0;
-
-    if (maze[y][x].walls[wall]) return false;
-
-    return Math.abs(maze[y][x].height - maze[ny][nx].height) <= 1;
-  }
-
-  function move(direction) {
-    if (paused || won) return;
-
-    const now = performance.now();
-    if (now - lastMove < 105) return;
-    lastMove = now;
-
-    const d = DIRS[direction];
-    if (!d) return;
-
-    const nx = player.x + d[0];
-    const ny = player.y + d[1];
-
-    if (!canMove(player.x, player.y, nx, ny)) {
-      UI.updateStats({
-        message: "هذا الطريق مغلق — ابحث عن ممر آخر"
-      });
-      return;
-    }
-
-    player = { x: nx, y: ny };
-
-    for (const c of crystals) {
-      if (c.active && c.x === nx && c.y === ny) {
-        c.active = false;
-        collected++;
-
-        UI.updateStats({
-          crystals: collected,
-          totalCrystals: crystals.length,
-          message: "رائع! جمعت بلورة ذهبية"
+      if (!crystals.some(c => c.x === candidate.x && c.y === candidate.y)) {
+        crystals.push({
+          x: candidate.x,
+          y: candidate.y,
+          taken: false,
+          phase: Math.random() * Math.PI * 2
         });
       }
     }
 
-    if (nx === portal.x && ny === portal.y) {
-      if (collected === crystals.length) {
-        won = true;
-        const seconds = Math.floor(
-          (performance.now() - startedAt) / 1000
-        );
-
-        UI.updateStats({
-          status: "اكتملت المرحلة",
-          message: `أحسنت! أكملت المرحلة خلال ${formatTime(seconds)}`
-        });
-      } else {
-        UI.updateStats({
-          message: "اجمع كل البلورات أولًا لفتح البوابة"
-        });
-      }
-    }
-
-    render(performance.now());
-  }
-
-  function formatTime(seconds) {
-    const m = Math.floor(seconds / 60).toString().padStart(2, "0");
-    const s = (seconds % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
+    showMessage(`المرحلة ${level}`, 1400);
+    updateStats();
   }
 
   function project(x, y, z = 0) {
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    const tileW = Math.min(TILE_W, w / 11);
-    const tileH = tileW * 0.52;
+    const originX = canvas.width / 2;
+    const originY = Math.max(82, canvas.height * 0.19);
 
     return {
-      x: w / 2 + (x - y) * tileW / 2,
-      y: h * 0.45 + (x + y) * tileH / 2 - z * BLOCK_H
+      x: originX + (x - y) * CONFIG.tileWidth / 2,
+      y: originY + (x + y) * CONFIG.tileHeight / 2 -
+        z * CONFIG.blockHeight
     };
   }
 
-  function polygon(points, fill, stroke = null, lineWidth = 1) {
+  function polygon(points, fill, stroke, lineWidth = 1) {
     ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) {
-      ctx.lineTo(points[i].x, points[i].y);
-    }
+    points.forEach((p, i) => {
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
     ctx.closePath();
 
-    ctx.fillStyle = fill;
-    ctx.fill();
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
 
     if (stroke) {
       ctx.strokeStyle = stroke;
@@ -387,323 +263,417 @@
     }
   }
 
-  function drawDiamond(x, y, rx, ry, fill, stroke = null) {
+  function drawPath(cell, time) {
+    const p = project(cell.x, cell.y);
+
+    const w = CONFIG.tileWidth / 2;
+    const h = CONFIG.tileHeight / 2;
+
     polygon([
-      { x, y: y - ry },
-      { x: x + rx, y },
-      { x, y: y + ry },
-      { x: x - rx, y }
-    ], fill, stroke, 1);
-  }
-
-  function drawFloor(x, y, time) {
-    const p = project(x, y);
-    const tw = Math.min(TILE_W, canvas.clientWidth / 11);
-    const th = tw * 0.52;
-
-    drawDiamond(
-      p.x, p.y, tw / 2, th / 2,
-      ((x + y) % 2 === 0) ? "#15130d" : "#100f0b",
-      "#5d461b"
-    );
-
-    // مسار ذهبي خافت يمر عبر مركز كل خلية.
-    ctx.save();
-    ctx.globalAlpha = 0.32 + Math.sin(time / 550 + x + y) * 0.08;
-    ctx.shadowColor = GOLD;
-    ctx.shadowBlur = 8;
-    drawDiamond(p.x, p.y, tw * 0.14, th * 0.14, GOLD);
-    ctx.restore();
-  }
-
-  function drawBlock(x, y, height) {
-    if (height <= 0) return;
-
-    const p = project(x, y);
-    const tw = Math.min(TILE_W, canvas.clientWidth / 11);
-    const th = tw * 0.52;
-    const z = height * BLOCK_H;
-
-    // الواجهة الأمامية اليسرى.
-    polygon([
-      { x: p.x - tw / 2, y: p.y },
-      { x: p.x, y: p.y + th / 2 },
-      { x: p.x, y: p.y + th / 2 + z },
-      { x: p.x - tw / 2, y: p.y + z }
-    ], "#111111", "#332a17");
-
-    // الواجهة الأمامية اليمنى.
-    polygon([
-      { x: p.x + tw / 2, y: p.y },
-      { x: p.x, y: p.y + th / 2 },
-      { x: p.x, y: p.y + th / 2 + z },
-      { x: p.x + tw / 2, y: p.y + z }
-    ], "#1b1913", "#4b3a19");
-
-    // السطح العلوي.
-    polygon([
-      { x: p.x, y: p.y - th / 2 },
-      { x: p.x + tw / 2, y: p.y },
-      { x: p.x, y: p.y + th / 2 },
-      { x: p.x - tw / 2, y: p.y }
-    ], "#292316", "#b18a2c");
+      { x: p.x, y: p.y },
+      { x: p.x + w, y: p.y + h },
+      { x: p.x, y: p.y + h * 2 },
+      { x: p.x - w, y: p.y + h }
+    ], '#15120b', '#4d3a16', 1);
 
     ctx.save();
-    ctx.shadowColor = GOLD;
-    ctx.shadowBlur = 6;
-    ctx.strokeStyle = "#d5a934";
-    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.35 + 0.13 * Math.sin(time / 380 + cell.x + cell.y);
+    ctx.strokeStyle = CONFIG.colors.gold;
+    ctx.lineWidth = 1.2;
+
     ctx.beginPath();
-    ctx.moveTo(p.x - tw / 2, p.y);
-    ctx.lineTo(p.x, p.y + th / 2);
-    ctx.lineTo(p.x + tw / 2, p.y);
+    ctx.moveTo(p.x - w * 0.5, p.y + h);
+    ctx.lineTo(p.x, p.y + h * 1.5);
+    ctx.lineTo(p.x + w * 0.5, p.y + h);
     ctx.stroke();
+
     ctx.restore();
   }
 
-  function drawCrystal(c, time) {
-    if (!c.active) return;
+  function drawBlock(cell) {
+    const p = project(cell.x, cell.y);
+    const w = CONFIG.tileWidth / 2;
+    const h = CONFIG.tileHeight / 2;
+    const z = cell.height * CONFIG.blockHeight;
 
-    const p = project(c.x, c.y, maze[c.y][c.x].height + 0.8);
-    const bob = Math.sin(time / 270 + c.phase) * 3;
-    const r = Math.min(9, canvas.clientWidth / 40);
+    const top = [
+      { x: p.x, y: p.y - z },
+      { x: p.x + w, y: p.y + h - z },
+      { x: p.x, y: p.y + h * 2 - z },
+      { x: p.x - w, y: p.y + h - z }
+    ];
+
+    const left = [
+      top[3],
+      top[2],
+      { x: top[2].x, y: top[2].y + z },
+      { x: top[3].x, y: top[3].y + z }
+    ];
+
+    const right = [
+      top[1],
+      top[2],
+      { x: top[2].x, y: top[2].y + z },
+      { x: top[1].x, y: top[1].y + z }
+    ];
+
+    polygon(left, '#080808', '#29251c', 0.8);
+    polygon(right, '#101010', '#302717', 0.8);
+    polygon(top, '#1b1b1b', '#3a301c', 1);
 
     ctx.save();
-    ctx.translate(p.x, p.y - 8 + bob);
-    ctx.shadowColor = GOLD;
-    ctx.shadowBlur = 16;
+    ctx.strokeStyle = 'rgba(233,184,63,0.32)';
+    ctx.lineWidth = 1;
+
+    ctx.beginPath();
+    ctx.moveTo(top[0].x, top[0].y);
+    ctx.lineTo(top[1].x, top[1].y);
+    ctx.lineTo(top[2].x, top[2].y);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawCrystal(crystal, time) {
+    if (crystal.taken) return;
+
+    const p = project(crystal.x, crystal.y);
+    const bob = Math.sin(time / 240 + crystal.phase) * 3;
+    const x = p.x;
+    const y = p.y + CONFIG.tileHeight / 2 - 12 + bob;
+
+    ctx.save();
+    ctx.shadowColor = CONFIG.colors.glow;
+    ctx.shadowBlur = 17;
 
     polygon([
-      { x: 0, y: -r * 1.6 },
-      { x: r * 0.8, y: -r * 0.3 },
-      { x: r * 0.55, y: r },
-      { x: 0, y: r * 1.3 },
-      { x: -r * 0.55, y: r },
-      { x: -r * 0.8, y: -r * 0.3 }
-    ], "#f6cf57", "#fff1aa");
+      { x, y: y - 13 },
+      { x: x + 7, y: y - 2 },
+      { x, y: y + 8 },
+      { x: x - 7, y: y - 2 }
+    ], '#f9d66b', '#fff1b0', 1);
 
     polygon([
-      { x: 0, y: -r * 1.6 },
-      { x: r * 0.8, y: -r * 0.3 },
-      { x: 0, y: r * 1.3 }
-    ], "#fff0a1");
+      { x, y: y - 13 },
+      { x: x + 7, y: y - 2 },
+      { x, y: y - 1 }
+    ], '#fff3b2');
+
+    polygon([
+      { x, y: y - 13 },
+      { x, y: y - 1 },
+      { x: x - 7, y: y - 2 }
+    ], '#c18a24');
 
     ctx.restore();
   }
 
   function drawPortal(time) {
-    const p = project(portal.x, portal.y, maze[portal.y][portal.x].height);
-
-    const scale = Math.min(1, canvas.clientWidth / 340);
-    const w = 19 * scale;
-    const h = 27 * scale;
-    const open = collected === crystals.length;
+    const x = CONFIG.columns - 1;
+    const y = CONFIG.rows - 1;
+    const p = project(x, y);
+    const cx = p.x;
+    const cy = p.y + CONFIG.tileHeight / 2 - 8;
+    const pulse = 1 + Math.sin(time / 220) * 0.08;
 
     ctx.save();
-    ctx.translate(p.x, p.y - h / 2);
+    ctx.translate(cx, cy);
+    ctx.scale(pulse, pulse);
 
-    ctx.shadowColor = open ? BRIGHT : GOLD;
-    ctx.shadowBlur = 12 + Math.sin(time / 230) * 4;
+    ctx.shadowColor = CONFIG.colors.glow;
+    ctx.shadowBlur = 18;
 
-    ctx.strokeStyle = open ? BRIGHT : "#9a7224";
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#f6c64c';
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(-w, h / 2);
-    ctx.lineTo(-w, -h / 3);
-    ctx.quadraticCurveTo(-w, -h, 0, -h);
-    ctx.quadraticCurveTo(w, -h, w, -h / 3);
-    ctx.lineTo(w, h / 2);
+    ctx.ellipse(0, -10, 12, 18, 0, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.fillStyle = open ? "#e9bb4433" : "#5d451122";
-    ctx.fill();
+    ctx.strokeStyle = '#fff0a5';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(0, -10, 7, 13, 0, 0, Math.PI * 2);
+    ctx.stroke();
 
     ctx.restore();
+
+    if (collected < CONFIG.crystalCount) {
+      ctx.save();
+      ctx.fillStyle = '#e7c46b';
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(
+        `${collected}/${CONFIG.crystalCount}`,
+        cx,
+        cy + 18
+      );
+      ctx.restore();
+    }
   }
 
   function drawPlayer(time) {
-    const p = project(player.x, player.y, maze[player.y][player.x].height);
-    const pulse = 1 + Math.sin(time / 170) * 0.08;
-    const r = Math.min(10, canvas.clientWidth / 34) * pulse;
-
-    // ظل الكرة.
-    ctx.save();
-    ctx.globalAlpha = 0.65;
-    ctx.shadowColor = GOLD;
-    ctx.shadowBlur = 10;
-    drawDiamond(p.x, p.y + 4, r * 1.15, r * 0.4, "#9a6a18");
-    ctx.restore();
-
-    // الكرة نفسها.
-    const gradient = ctx.createRadialGradient(
-      p.x - r * 0.35, p.y - r * 0.5, 1,
-      p.x, p.y, r * 1.3
-    );
-
-    gradient.addColorStop(0, "#fffde5");
-    gradient.addColorStop(0.25, "#fff0a1");
-    gradient.addColorStop(0.62, "#edb92f");
-    gradient.addColorStop(1, "#82500b");
+    const p = project(player.x, player.y);
+    const x = p.x;
+    const y = p.y + CONFIG.tileHeight / 2 - 10;
 
     ctx.save();
-    ctx.shadowColor = "#ffc93c";
-    ctx.shadowBlur = 19;
+
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#000';
     ctx.beginPath();
-    ctx.arc(p.x, p.y - r * 0.35, r, 0, Math.PI * 2);
-    ctx.fillStyle = gradient;
+    ctx.ellipse(x, y + 10, 10, 4, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
 
-    ctx.save();
-    ctx.strokeStyle = "#fff4b7";
-    ctx.globalAlpha = 0.8;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(p.x - r * 0.25, p.y - r * 0.55, r * 0.25, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-  }
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = CONFIG.colors.glow;
+    ctx.shadowBlur = 20;
 
-  function drawGrid(time) {
-    // أرضية الشبكة.
-    for (let sum = 0; sum <= COLS + ROWS - 2; sum++) {
-      for (let y = 0; y < ROWS; y++) {
-        const x = sum - y;
-        if (!inside(x, y)) continue;
-        drawFloor(x, y, time);
-      }
-    }
-
-    // الكتل بترتيب العمق.
-    for (let sum = 0; sum <= COLS + ROWS - 2; sum++) {
-      for (let y = 0; y < ROWS; y++) {
-        const x = sum - y;
-        if (!inside(x, y)) continue;
-
-        drawBlock(x, y, maze[y][x].height);
-
-        // الجدران الخارجية.
-        const cell = maze[y][x];
-        const p = project(x, y);
-        const tw = Math.min(TILE_W, canvas.clientWidth / 11);
-        const th = tw * 0.52;
-
-        if (cell.walls[1] && x === COLS - 1) {
-          polygon([
-            { x: p.x + tw / 2, y: p.y },
-            { x: p.x, y: p.y + th / 2 },
-            { x: p.x, y: p.y + th / 2 + 10 },
-            { x: p.x + tw / 2, y: p.y + 10 }
-          ], "#14120d", "#6e501b");
-        }
-
-        if (cell.walls[2] && y === ROWS - 1) {
-          polygon([
-            { x: p.x - tw / 2, y: p.y },
-            { x: p.x, y: p.y + th / 2 },
-            { x: p.x, y: p.y + th / 2 + 10 },
-            { x: p.x - tw / 2, y: p.y + 10 }
-          ], "#11100c", "#6e501b");
-        }
-      }
-    }
-  }
-
-  function render(time = 0) {
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-
-    ctx.clearRect(0, 0, w, h);
-
-    const bg = ctx.createRadialGradient(
-      w / 2, h * 0.45, 5,
-      w / 2, h * 0.45, w * 0.7
+    const gradient = ctx.createRadialGradient(
+      x - 4, y - 5, 1, x, y, 11
     );
-    bg.addColorStop(0, "#211b0c");
-    bg.addColorStop(1, DARK);
+    gradient.addColorStop(0, '#fffbd8');
+    gradient.addColorStop(0.45, '#ffdf72');
+    gradient.addColorStop(1, '#b97b14');
 
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y - Math.sin(time / 130) * 1.5, 9, 0, Math.PI * 2);
+    ctx.fill();
 
-    ctx.save();
-    ctx.shadowColor = "#d5a52c";
-    ctx.shadowBlur = 28;
-    ctx.globalAlpha = 0.12;
-    ctx.strokeStyle = GOLD;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(12, 12, w - 24, h - 24);
     ctx.restore();
-
-    drawGrid(time);
-    drawPortal(time);
-
-    for (const crystal of crystals) {
-      drawCrystal(crystal, time);
-    }
-
-    drawPlayer(time);
-
-    if (paused) {
-      ctx.fillStyle = "#000b";
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = BRIGHT;
-      ctx.font = "bold 22px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillText("إيقاف مؤقت", w / 2, h / 2);
-    }
-
-    if (won) {
-      ctx.fillStyle = "#0009";
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = BRIGHT;
-      ctx.font = "bold 20px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillText("اكتملت المرحلة!", w / 2, h / 2 - 8);
-      ctx.font = "13px system-ui";
-      ctx.fillText("اضغط على إعادة المرحلة للعب مجددًا", w / 2, h / 2 + 20);
-    }
   }
 
-  function loop(time) {
-    if (!paused && !won) {
-      const seconds = Math.floor(
-        (time - startedAt + elapsedBeforePause) / 1000
+  function drawScene(time) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = CONFIG.colors.background;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const scale = Math.min(
+      1,
+      (canvas.width * 0.82) / (CONFIG.columns * CONFIG.tileWidth),
+      (canvas.height * 0.68) / (CONFIG.rows * CONFIG.tileHeight * 1.6)
+    );
+
+    ctx.save();
+    ctx.translate(0, Math.max(8, canvas.height * 0.02));
+    ctx.translate(canvas.width / 2, 0);
+    ctx.scale(scale, scale);
+    ctx.translate(-canvas.width / 2, 0);
+
+    /*
+     * Draw in diagonal order so nearer tiles appear in front.
+     */
+    for (let diagonal = 0; diagonal < CONFIG.columns + CONFIG.rows - 1; diagonal++) {
+      for (let y = 0; y < CONFIG.rows; y++) {
+        const x = diagonal - y;
+        if (!inside(x, y)) continue;
+
+        const cell = maze[y][x];
+
+        if (cell.path) drawPath(cell, time);
+        else drawBlock(cell);
+
+        if (x === CONFIG.columns - 1 && y === CONFIG.rows - 1) {
+          drawPortal(time);
+        }
+
+        crystals.forEach(crystal => {
+          if (crystal.x === x && crystal.y === y) {
+            drawCrystal(crystal, time);
+          }
+        });
+
+        if (player.x === x && player.y === y) {
+          drawPlayer(time);
+        }
+      }
+    }
+
+    ctx.restore();
+
+    if (paused || won) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.64)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = CONFIG.colors.glow;
+      ctx.font = 'bold 24px sans-serif';
+      ctx.fillText(
+        won ? 'أحسنت! وصلت إلى البوابة' : 'اللعبة متوقفة',
+        canvas.width / 2,
+        canvas.height / 2
       );
 
-      UI.updateStats({ time: formatTime(seconds) });
+      if (won) {
+        ctx.font = '15px sans-serif';
+        ctx.fillStyle = '#fff4cf';
+        ctx.fillText(
+          'اضغط إعادة المرحلة للعب مجددًا',
+          canvas.width / 2,
+          canvas.height / 2 + 30
+        );
+      }
+
+      ctx.restore();
     }
 
-    render(time);
+    if (message && time < messageUntil) {
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillStyle = CONFIG.colors.glow;
+      ctx.shadowColor = CONFIG.colors.gold;
+      ctx.shadowBlur = 10;
+      ctx.fillText(message, canvas.width / 2, 32);
+      ctx.restore();
+    }
+  }
+
+  function updateStats() {
+    if (typeof app.updateStats === 'function') {
+      app.updateStats({
+        level,
+        moves,
+        collected,
+        crystals: CONFIG.crystalCount,
+        time: Math.floor(elapsed / 1000),
+        won,
+        paused
+      });
+    }
+
+    const levelEl = document.getElementById('levelValue');
+    const movesEl = document.getElementById('movesValue');
+    const crystalEl = document.getElementById('crystalsValue');
+    const timeEl = document.getElementById('timeValue');
+
+    if (levelEl) levelEl.textContent = String(level);
+    if (movesEl) movesEl.textContent = String(moves);
+    if (crystalEl) {
+      crystalEl.textContent = `${collected}/${CONFIG.crystalCount}`;
+    }
+    if (timeEl) {
+      const seconds = Math.floor(elapsed / 1000);
+      const minutes = Math.floor(seconds / 60);
+      timeEl.textContent =
+        `${String(minutes).padStart(2, '0')}:` +
+        `${String(seconds % 60).padStart(2, '0')}`;
+    }
+  }
+
+  function showMessage(text, duration = 1200) {
+    message = text;
+    messageUntil = performance.now() + duration;
+  }
+
+  function checkCollect() {
+    const crystal = crystals.find(c =>
+      !c.taken && c.x === player.x && c.y === player.y
+    );
+
+    if (crystal) {
+      crystal.taken = true;
+      collected++;
+      showMessage('تم جمع البلورة الذهبية!');
+    }
+
+    if (
+      player.x === CONFIG.columns - 1 &&
+      player.y === CONFIG.rows - 1
+    ) {
+      if (collected >= CONFIG.crystalCount) {
+        won = true;
+        showMessage('اكتملت المرحلة!', 3000);
+      } else {
+        showMessage('اجمع البلورتين أولًا');
+      }
+    }
+
+    updateStats();
+  }
+
+  function move(direction) {
+    if (paused || won) return;
+
+    const delta = directions[direction];
+    if (!delta) return;
+
+    const nx = player.x + delta.x;
+    const ny = player.y + delta.y;
+
+    if (!inside(nx, ny) || !maze[ny][nx].path) {
+      showMessage('هذا الطريق مغلق');
+      return;
+    }
+
+    player.x = nx;
+    player.y = ny;
+    moves++;
+
+    checkCollect();
+    updateStats();
+  }
+
+  function restart() {
+    cancelAnimationFrame(animationId);
+    generateMaze();
+    lastFrame = 0;
     animationId = requestAnimationFrame(loop);
   }
 
-  document.addEventListener("drder:move", event => {
-    move(event.detail.direction);
-  });
-
-  document.addEventListener("drder:restart", () => {
-    newLevel();
-  });
-
-  document.addEventListener("drder:pause", () => {
+  function togglePause() {
     if (won) return;
 
-    if (!paused) {
-      elapsedBeforePause += performance.now() - startedAt;
-      paused = true;
-      UI.updateStats({ message: "اللعبة متوقفة مؤقتًا" });
-    } else {
-      startedAt = performance.now();
-      paused = false;
-      UI.updateStats({ message: "واصل رحلتك نحو البوابة الذهبية" });
+    paused = !paused;
+    lastTime = performance.now();
+    showMessage(paused ? 'تم إيقاف اللعبة' : 'استأنفت اللعب');
+    updateStats();
+  }
+
+  function loop(time) {
+    if (!lastFrame) lastFrame = time;
+
+    const delta = Math.max(0, time - lastFrame);
+    lastFrame = time;
+
+    if (!paused && !won) {
+      elapsed += delta;
+    }
+
+    drawScene(time);
+    updateStats();
+
+    animationId = requestAnimationFrame(loop);
+  }
+
+  document.addEventListener('drder:move', event => {
+    const direction = event.detail && event.detail.direction;
+    move(direction);
+  });
+
+  document.addEventListener('drder:restart', restart);
+  document.addEventListener('drder:pause', togglePause);
+
+  document.addEventListener('keydown', event => {
+    const map = {
+      ArrowUp: 'up',
+      ArrowDown: 'down',
+      ArrowLeft: 'left',
+      ArrowRight: 'right',
+      w: 'up',
+      s: 'down',
+      a: 'left',
+      d: 'right'
+    };
+
+    const direction = map[event.key];
+    if (direction) {
+      event.preventDefault();
+      move(direction);
     }
   });
 
-  document.addEventListener("drder:restart", () => {
-    // إعادة المحاولة في المرحلة نفسها.
-    newLevel();
-  });
-
-  // بدء اللعبة.
-  newLevel();
+  generateMaze();
+  animationId = requestAnimationFrame(loop);
 })();
