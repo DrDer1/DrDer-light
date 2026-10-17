@@ -1,10 +1,14 @@
 
-'use strict';
+/* DrDer-light — engine.js
+   منظور خلف الكرة، طريق ذهبي واسع، وعالم متجدد حسب المرحلة.
+   يعتمد على window.DrDerLight و gameCanvas الموجودين في index.html.
+*/
+(function () {
+  'use strict';
 
-(() => {
   const app = window.DrDerLight;
   if (!app || !app.canvas || !app.ctx) {
-    console.error('DrDer-light: Canvas غير متاح.');
+    console.error('DrDer-light: لم يتم العثور على Canvas.');
     return;
   }
 
@@ -12,57 +16,61 @@
   const ctx = app.ctx;
 
   const SAVE_KEY = 'drder-light-progress-v1';
-  const CRYSTAL_COUNT = 2;
   const LANES = 7;
   const CENTER_LANE = 3;
-
-  const COLORS = {
-    gold: '#e9b83f',
-    light: '#ffdf79',
-    text: '#fff4cf',
-    path: '#17130b',
-    edge: '#70501b',
-    block: '#101010'
-  };
+  const GOLD = '#f4cf63';
+  const GOLD_LIGHT = '#fff0a0';
+  const GOLD_DARK = '#8f7220';
+  const BG = '#080806';
 
   let level = 1;
-  let bestLevel = 1;
-  let completedLevels = 0;
   let moves = 0;
-  let collected = 0;
+  let crystals = 0;
   let elapsed = 0;
-  let won = false;
   let paused = false;
-
-  let worldLength = 45;
-  let player = { lane: CENTER_LANE, z: 0 };
-  let route = [];
-  let crystals = [];
-  let portalZ = 45;
-
+  let won = false;
+  let animationId = 0;
+  let lastFrame = 0;
+  let lastSecond = 0;
   let message = '';
   let messageUntil = 0;
-  let lastFrame = 0;
-  let animationId = 0;
-  let touchStart = null;
-  let audioContext = null;
+  let pointerStart = null;
+  let touchCooldown = 0;
 
-  // أبعاد الرسم المنطقية بوحدات CSS، لا بوحدات البكسل الفعلية.
+  let player = {
+    lane: CENTER_LANE,
+    z: 0,
+    visualLane: CENTER_LANE,
+    visualZ: 0
+  };
+
+  let worldLength = 54;
+  let route = [];
+  let blocks = new Set();
+  let crystalPositions = [];
+  let portalZ = worldLength - 2;
+
   function dimensions() {
     const rect = canvas.getBoundingClientRect();
     return {
-      width: Math.max(1, rect.width),
-      height: Math.max(1, rect.height)
+      w: Math.max(1, rect.width),
+      h: Math.max(1, rect.height)
     };
   }
 
   function syncCanvas() {
-    const { width, height } = dimensions();
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(1, rect.width);
+    const h = Math.max(1, rect.height);
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    const targetWidth = Math.round(width * ratio);
-    const targetHeight = Math.round(height * ratio);
 
-    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+    const targetWidth = Math.round(w * ratio);
+    const targetHeight = Math.round(h * ratio);
+
+    if (
+      canvas.width !== targetWidth ||
+      canvas.height !== targetHeight
+    ) {
       canvas.width = targetWidth;
       canvas.height = targetHeight;
     }
@@ -70,158 +78,211 @@
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   }
 
-  function rand(max) {
-    return Math.floor(Math.random() * max);
+  function rand(seed) {
+    let value = Math.sin(seed * 127.1 + level * 311.7) * 43758.5453;
+    return value - Math.floor(value);
   }
 
-  function loadProgress() {
-    try {
-      const data = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
-      if (Number.isInteger(data.level) && data.level > 0) level = data.level;
-      if (Number.isInteger(data.bestLevel) && data.bestLevel > 0) {
-        bestLevel = data.bestLevel;
-      }
-      if (Number.isInteger(data.completedLevels) && data.completedLevels >= 0) {
-        completedLevels = data.completedLevels;
-      }
-    } catch (_) {}
-  }
-
-  function saveProgress() {
-    try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({
-        level,
-        bestLevel,
-        completedLevels,
-        savedAt: Date.now()
-      }));
-    } catch (_) {}
-  }
-
-  function say(text, duration = 1400) {
-    message = text;
-    messageUntil = performance.now() + duration;
-  }
-
-  function stats() {
-    if (typeof app.updateStats === 'function') {
-      app.updateStats({
-        level,
-        moves,
-        collected,
-        crystals: CRYSTAL_COUNT,
-        time: Math.floor(elapsed / 1000),
-        won,
-        paused,
-        bestLevel,
-        completedLevels
-      });
-    }
-  }
-
-  function generateWorld() {
-    worldLength = Math.min(45 + level * 3, 180);
-    portalZ = worldLength;
-
-    route = new Array(worldLength + 1);
-    route[0] = CENTER_LANE;
-
-    let lane = CENTER_LANE;
-    let direction = 0;
-
-    for (let z = 1; z <= worldLength; z++) {
-      if (Math.random() < Math.min(0.24 + level * 0.002, 0.38)) {
-        direction = rand(3) - 1;
-      }
-
-      lane += direction;
-      lane = Math.max(1, Math.min(LANES - 2, lane));
-
-      if (Math.random() < 0.15) direction = 0;
-      route[z] = lane;
-    }
-
-    player = { lane: route[0], z: 0 };
-    moves = 0;
-    collected = 0;
-    elapsed = 0;
-    won = false;
-    paused = false;
-
-    placeCrystals();
-    say(`المرحلة ${level}`, 1800);
-    stats();
+  function key(lane, z) {
+    return lane + ':' + z;
   }
 
   function routeLane(z) {
-    const index = Math.max(0, Math.min(worldLength, Math.round(z)));
+    const index = Math.max(0, Math.min(route.length - 1, Math.floor(z)));
     return route[index] ?? CENTER_LANE;
   }
 
   function isOpen(lane, z) {
-    if (z < 0 || z > worldLength || lane < 0 || lane >= LANES) {
+    if (lane < 0 || lane >= LANES || z < 0 || z > worldLength) {
       return false;
     }
 
-    const main = routeLane(z);
-    if (lane === main) return true;
+    if (z <= 1) return lane === CENTER_LANE;
 
-    // ممرات جانبية متصلة بالطريق الرئيسي.
-    if (Math.abs(lane - main) === 1) {
-      const value = Math.abs(Math.sin(z * 12.9898 + lane * 78.233)) % 1;
-      return value > 0.34;
+    const target = routeLane(z);
+
+    if (lane === target) return true;
+
+    if (Math.abs(lane - target) === 1) {
+      return rand(z * 19 + lane * 7) > 0.40;
     }
 
     return false;
   }
 
-  function placeCrystals() {
-    crystals = [];
+  function isBlocked(lane, z) {
+    return blocks.has(key(lane, Math.round(z)));
+  }
 
-    const first = Math.max(5, Math.floor(worldLength * 0.28));
-    const second = Math.min(
-      worldLength - 4,
-      Math.max(first + 5, Math.floor(worldLength * 0.66))
+  function canStand(lane, z) {
+    return isOpen(lane, z) && !isBlocked(lane, z);
+  }
+
+  function generateWorld() {
+    worldLength = Math.min(54 + level * 4, 180);
+    portalZ = worldLength - 2;
+
+    route = [CENTER_LANE];
+    blocks = new Set();
+    crystalPositions = [];
+
+    let currentLane = CENTER_LANE;
+
+    for (let z = 1; z <= worldLength; z++) {
+      if (z > 2 && rand(z * 3 + 11) > 0.57) {
+        const change = rand(z * 5 + 17) > 0.5 ? 1 : -1;
+        currentLane = Math.max(
+          1,
+          Math.min(LANES - 2, currentLane + change)
+        );
+      }
+
+      route[z] = currentLane;
+    }
+
+    // مسار مضمون ومتصّل: كل صف يفتح المسار الرئيسي
+    // وممرًا انتقاليًا عند تغير اتجاه الطريق.
+    for (let z = 2; z < worldLength - 1; z++) {
+      const mainLane = routeLane(z);
+
+      for (let lane = 0; lane < LANES; lane++) {
+        const distance = Math.abs(lane - mainLane);
+        const sideChance = rand(z * 13 + lane * 31);
+
+        if (distance > 0 && sideChance > 0.43) {
+          blocks.add(key(lane, z));
+        }
+      }
+
+      // منع سد المسار الرئيسي أو إغلاق الانتقال إليه.
+      blocks.delete(key(mainLane, z));
+      blocks.delete(key(routeLane(z - 1), z));
+    }
+
+    // بلورتان على مسار يمكن الوصول إليه.
+    const firstCrystalZ = Math.max(7, Math.floor(worldLength * 0.24));
+    const secondCrystalZ = Math.max(
+      firstCrystalZ + 7,
+      Math.floor(worldLength * 0.58)
     );
 
-    [first, second].forEach((z, i) => {
-      crystals.push({
-        lane: routeLane(z),
-        z,
-        taken: false,
-        phase: i * 1.7
+    crystalPositions = [
+      {
+        lane: routeLane(firstCrystalZ),
+        z: firstCrystalZ,
+        collected: false
+      },
+      {
+        lane: routeLane(secondCrystalZ),
+        z: secondCrystalZ,
+        collected: false
+      }
+    ];
+
+    // ضمان بقاء الممر مفتوحًا عند البلورات.
+    crystalPositions.forEach(function (crystal) {
+      blocks.delete(key(crystal.lane, crystal.z));
+    });
+  }
+
+  function saveProgress() {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({
+        level: level,
+        bestLevel: level,
+        savedAt: Date.now()
+      }));
+    } catch (error) {
+      console.warn('DrDer-light: تعذر حفظ التقدم.', error);
+    }
+  }
+
+  function loadProgress() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
+      if (Number.isFinite(saved.level) && saved.level > 0) {
+        level = Math.floor(saved.level);
+      }
+    } catch (error) {
+      level = 1;
+    }
+  }
+
+  function updateStats() {
+    if (typeof app.updateStats === 'function') {
+      app.updateStats({
+        level: level,
+        moves: moves,
+        crystals: crystals,
+        time: elapsed,
+        won: won,
+        paused: paused
       });
-    });
+    }
+
+    const levelEl = document.getElementById('levelValue');
+    const movesEl = document.getElementById('movesValue');
+    const crystalsEl = document.getElementById('crystalsValue');
+    const timeEl = document.getElementById('timeValue');
+
+    if (levelEl) levelEl.textContent = String(level);
+    if (movesEl) movesEl.textContent = String(moves);
+    if (crystalsEl) crystalsEl.textContent = crystals + '/2';
+
+    if (timeEl) {
+      const mins = Math.floor(elapsed / 60);
+      const secs = Math.floor(elapsed % 60);
+      timeEl.textContent =
+        String(mins).padStart(2, '0') + ':' +
+        String(secs).padStart(2, '0');
+    }
+
+    const nextButton = document.getElementById('nextButton');
+    if (nextButton) nextButton.disabled = !won;
   }
 
-  /*
-   * إسقاط منظور خلف الكرة.
-   * نستخدم الإحداثيات المنطقية حتى لا يتضخم الرسم على شاشات الهاتف.
-   */
-  function project(lane, z, lift = 0) {
-    const { width: w, height: h } = dimensions();
-
-    const horizon = h * 0.28;
-    const distance = z - player.z;
-
-    // تثبيت أقرب وأبعد عمق لتجنّب قيم ضخمة أو انعكاس المشهد.
-    const denominator = Math.max(0.55, 1 + distance * 0.105);
-    const scale = Math.max(0.12, Math.min(1.65, 1 / denominator));
-
-    const laneWidth = w * 0.145 * scale;
-    const x = w / 2 + (lane - player.lane) * laneWidth;
-    const y = horizon + h * 0.69 * scale - lift * scale;
-
-    return { x, y, scale, laneWidth };
+  function say(text, duration) {
+    message = text;
+    messageUntil = performance.now() + (duration || 1800);
   }
 
-  function polygon(points, fill, stroke, lineWidth = 1) {
+  // إسقاط منظور خلف الكرة.
+  // جعل عرض الطريق أكبر وإظهار مساحة أوسع من المشهد.
+  function project(lane, z, lift) {
+    const size = dimensions();
+    const w = size.w;
+    const h = size.h;
+
+    const horizon = h * 0.265;
+    const distance = z - player.visualZ;
+
+    const perspective = 1 / (1 + Math.max(0, distance) * 0.075);
+    const scale = Math.max(0.075, Math.min(2.05, perspective));
+
+    const laneWidth = w * 0.19 * scale;
+    const x = w * 0.5 +
+      (lane - player.visualLane) * laneWidth;
+
+    const y = horizon + h * 0.79 * scale - (lift || 0) * scale;
+
+    return {
+      x: x,
+      y: y,
+      scale: scale,
+      laneWidth: laneWidth,
+      horizon: horizon
+    };
+  }
+
+  function polygon(points, fill, stroke, lineWidth) {
+    if (!points || points.length < 3) return;
+
     ctx.beginPath();
+    ctx.moveTo(points[0][0], points[0][1]);
 
-    points.forEach((point, index) => {
-      if (index === 0) ctx.moveTo(point.x, point.y);
-      else ctx.lineTo(point.x, point.y);
-    });
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i][0], points[i][1]);
+    }
 
     ctx.closePath();
 
@@ -232,210 +293,259 @@
 
     if (stroke) {
       ctx.strokeStyle = stroke;
-      ctx.lineWidth = lineWidth;
+      ctx.lineWidth = lineWidth || 1;
       ctx.stroke();
     }
   }
 
-  function drawSky(time, w, h) {
+  function drawSky(w, h) {
     const gradient = ctx.createLinearGradient(0, 0, 0, h);
-    gradient.addColorStop(0, '#030303');
-    gradient.addColorStop(0.45, '#100d07');
+    gradient.addColorStop(0, '#080807');
+    gradient.addColorStop(0.40, '#100d05');
+    gradient.addColorStop(0.72, '#090805');
     gradient.addColorStop(1, '#050505');
 
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, w, h);
 
+    const horizon = h * 0.265;
     const glow = ctx.createRadialGradient(
-      w / 2, h * 0.28, 1,
-      w / 2, h * 0.28, w * 0.65
+      w * 0.5, horizon, 1,
+      w * 0.5, horizon, w * 0.72
     );
 
-    glow.addColorStop(0, 'rgba(190,130,25,0.15)');
+    glow.addColorStop(0, 'rgba(200,150,35,0.12)');
+    glow.addColorStop(0.55, 'rgba(120,80,15,0.035)');
     glow.addColorStop(1, 'rgba(0,0,0,0)');
 
     ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, w, h * 0.8);
 
-    ctx.save();
-    ctx.strokeStyle = 'rgba(233,184,63,0.15)';
+    // خطوط أفقية ناعمة في المسافة.
+    ctx.strokeStyle = 'rgba(190,145,48,0.045)';
     ctx.lineWidth = 1;
 
-    for (let i = -5; i <= 5; i++) {
-      ctx.beginPath();
-      ctx.moveTo(w / 2 + i * w * 0.035, h * 0.28);
-      ctx.lineTo(w / 2 + i * w * 0.33, h);
-      ctx.stroke();
-    }
-
-    for (let i = 0; i < 9; i++) {
-      const progress = (i / 9 + (time * 0.00007) % 1) % 1;
-      const y = h * 0.28 + progress * progress * h * 0.72;
-
-      ctx.globalAlpha = 0.04 + progress * 0.10;
+    for (let i = 0; i < 7; i++) {
+      const y = horizon + i * i * h * 0.008;
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(w, y);
       ctx.stroke();
     }
 
-    ctx.restore();
-  }
+    // خطوط منظور ممتدة نحو الأفق.
+    ctx.strokeStyle = 'rgba(205,161,61,0.22)';
+    ctx.lineWidth = 1;
 
-  function drawTile(lane, z, time, w, h) {
-    const near = project(lane, z);
-    const far = project(lane, z + 1);
-
-    const leftNear = project(lane - 0.5, z);
-    const rightNear = project(lane + 0.5, z);
-    const leftFar = project(lane - 0.5, z + 1);
-    const rightFar = project(lane + 0.5, z + 1);
-
-    if (near.y < h * 0.20 || far.y > h * 1.5) return;
-
-    if (isOpen(lane, z)) {
-      polygon([
-        { x: leftFar.x, y: far.y },
-        { x: rightFar.x, y: far.y },
-        { x: rightNear.x, y: near.y },
-        { x: leftNear.x, y: near.y }
-      ], COLORS.path, COLORS.edge, Math.max(0.5, near.scale));
-
-      const pulse = 0.25 + (Math.sin(time / 280 + z) + 1) * 0.12;
-
-      ctx.save();
-      ctx.globalAlpha = pulse;
-      ctx.strokeStyle = COLORS.light;
-      ctx.shadowColor = COLORS.gold;
-      ctx.shadowBlur = 8 * near.scale;
-      ctx.lineWidth = Math.max(0.6, near.scale);
-
+    for (let i = -8; i <= 8; i++) {
       ctx.beginPath();
-      ctx.moveTo(leftNear.x, near.y);
-      ctx.lineTo(leftFar.x, far.y);
-      ctx.moveTo(rightNear.x, near.y);
-      ctx.lineTo(rightFar.x, far.y);
+      ctx.moveTo(w * 0.5 + i * 2, horizon);
+      ctx.lineTo(w * 0.5 + i * w * 0.105, h * 1.04);
       ctx.stroke();
-      ctx.restore();
-      return;
     }
 
-    const blockHeight = Math.max(3, 38 * near.scale);
-    const topY = near.y - blockHeight;
+    // شبكة الأرضية.
+    ctx.strokeStyle = 'rgba(187,143,45,0.10)';
 
-    polygon([
-      { x: leftFar.x, y: far.y },
-      { x: rightFar.x, y: far.y },
-      { x: rightNear.x, y: near.y },
-      { x: leftNear.x, y: near.y }
-    ], '#080808', '#201a10', Math.max(0.5, near.scale));
-
-    polygon([
-      { x: leftNear.x, y: topY },
-      { x: rightNear.x, y: topY },
-      { x: rightNear.x, y: near.y },
-      { x: leftNear.x, y: near.y }
-    ], '#080808', '#332817', Math.max(0.5, near.scale));
-
-    polygon([
-      { x: leftNear.x, y: topY },
-      { x: rightNear.x, y: topY },
-      { x: rightFar.x, y: far.y - blockHeight * 0.35 },
-      { x: leftFar.x, y: far.y - blockHeight * 0.35 }
-    ], COLORS.block, '#352a16', Math.max(0.5, near.scale));
+    for (let i = 1; i <= 13; i++) {
+      const t = i / 13;
+      const y = horizon + (h - horizon) * t * t;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
   }
 
-  function drawCrystal(crystal, time, h) {
-    if (crystal.taken) return;
+  function drawTile(lane, z, w, h) {
+    const near = project(lane, z, 0);
+    const far = project(lane, z + 1, 0);
 
-    const p = project(crystal.lane, crystal.z, 23);
-    if (p.y < h * 0.22 || p.y > h * 1.15) return;
+    if (near.y < h * 0.19 || far.y > h * 1.35) return;
 
-    const bob = Math.sin(time / 220 + crystal.phase) * 3 * p.scale;
-    const size = Math.max(2, 9 * p.scale);
+    const leftNear = near.x - near.laneWidth * 0.5;
+    const rightNear = near.x + near.laneWidth * 0.5;
+    const leftFar = far.x - far.laneWidth * 0.5;
+    const rightFar = far.x + far.laneWidth * 0.5;
 
-    ctx.save();
-    ctx.shadowColor = COLORS.light;
-    ctx.shadowBlur = 15 * p.scale;
+    const open = isOpen(lane, z);
+    const blocked = isBlocked(lane, z);
+
+    let fill = '#0c0b08';
+
+    if (open) {
+      fill = (z + lane) % 2 === 0 ? '#151107' : '#100d07';
+    }
 
     polygon([
-      { x: p.x, y: p.y - size * 1.7 + bob },
-      { x: p.x + size * 0.7, y: p.y - size * 0.35 + bob },
-      { x: p.x, y: p.y + size + bob },
-      { x: p.x - size * 0.7, y: p.y - size * 0.35 + bob }
-    ], '#f7ce58', '#fff1b0', Math.max(0.5, p.scale));
+      [leftFar, far.y],
+      [rightFar, far.y],
+      [rightNear, near.y],
+      [leftNear, near.y]
+    ], fill, 'rgba(203,157,56,0.28)', 1);
+
+    if (open) {
+      ctx.strokeStyle = 'rgba(232,188,78,0.28)';
+      ctx.lineWidth = Math.max(0.6, near.scale * 0.8);
+
+      ctx.beginPath();
+      ctx.moveTo(leftNear, near.y);
+      ctx.lineTo(leftFar, far.y);
+      ctx.moveTo(rightNear, near.y);
+      ctx.lineTo(rightFar, far.y);
+      ctx.stroke();
+    }
+
+    if (blocked && z > player.z + 1) {
+      const depth = Math.max(2, near.scale * h * 0.035);
+      const topY = near.y - depth;
+      const side = Math.max(1, near.scale * w * 0.009);
+
+      // واجهة الكتلة.
+      polygon([
+        [leftNear, topY],
+        [rightNear, topY],
+        [rightNear, near.y],
+        [leftNear, near.y]
+      ], '#080807', 'rgba(162,126,47,0.36)', 1);
+
+      // السطح العلوي.
+      polygon([
+        [leftFar, far.y],
+        [rightFar, far.y],
+        [rightNear, topY],
+        [leftNear, topY]
+      ], '#17130b', 'rgba(170,131,47,0.28)', 1);
+
+      // جانب الكتلة لإبراز العمق.
+      polygon([
+        [rightNear, topY],
+        [rightNear, near.y],
+        [rightNear + side, near.y + side * 0.35],
+        [rightNear + side, topY + side * 0.35]
+      ], '#0b0a07', 'rgba(170,131,47,0.20)', 0.8);
+    }
+  }
+
+  function drawCrystal(crystal, w, h) {
+    if (crystal.collected) return;
+
+    const p = project(crystal.lane, crystal.z, h * 0.06);
+
+    if (p.y < h * 0.20 || p.y > h * 1.05) return;
+    if (p.x < -w * 0.15 || p.x > w * 1.15) return;
+
+    const size = Math.max(2, Math.min(22, w * 0.026 * p.scale * 4));
+
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.shadowColor = GOLD;
+    ctx.shadowBlur = size * 1.5;
+
+    polygon([
+      [0, -size],
+      [size * 0.62, 0],
+      [0, size],
+      [-size * 0.62, 0]
+    ], GOLD, GOLD_LIGHT, 1.2);
 
     ctx.restore();
   }
 
-  function drawPortal(time, h) {
-    const p = project(routeLane(portalZ), portalZ, 8);
-    if (p.y < h * 0.20 || p.y > h * 1.2) return;
+  function drawPortal(w, h) {
+    const p = project(routeLane(portalZ), portalZ, 0);
 
-    const size = Math.max(3, 20 * p.scale);
-    const pulse = 1 + Math.sin(time / 210) * 0.08;
+    if (p.y < h * 0.19 || p.y > h * 1.25) return;
+    if (p.x < -w * 0.3 || p.x > w * 1.3) return;
+
+    const width = Math.max(5, p.laneWidth * 0.72);
+    const height = width * 1.55;
 
     ctx.save();
-    ctx.translate(p.x, p.y - size);
-    ctx.scale(pulse, pulse);
-    ctx.shadowColor = COLORS.light;
-    ctx.shadowBlur = 20 * p.scale;
-    ctx.strokeStyle = COLORS.gold;
-    ctx.lineWidth = Math.max(1.2, 4 * p.scale);
+    ctx.shadowColor = GOLD;
+    ctx.shadowBlur = 18 * p.scale;
+
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = Math.max(1, 3 * p.scale);
 
     ctx.beginPath();
-    ctx.ellipse(0, 0, size * 0.55, size, 0, 0, Math.PI * 2);
+    ctx.moveTo(p.x - width * 0.5, p.y);
+    ctx.lineTo(p.x - width * 0.5, p.y - height);
+    ctx.quadraticCurveTo(
+      p.x, p.y - height * 1.22,
+      p.x + width * 0.5, p.y - height
+    );
+    ctx.lineTo(p.x + width * 0.5, p.y);
     ctx.stroke();
 
-    ctx.strokeStyle = '#fff2b0';
-    ctx.lineWidth = Math.max(0.6, 1.5 * p.scale);
+    ctx.strokeStyle = 'rgba(255,226,130,0.65)';
+    ctx.lineWidth = Math.max(0.6, p.scale);
+
     ctx.beginPath();
-    ctx.ellipse(0, 0, size * 0.33, size * 0.75, 0, 0, Math.PI * 2);
+    ctx.moveTo(p.x - width * 0.34, p.y);
+    ctx.lineTo(p.x - width * 0.34, p.y - height * 0.94);
+    ctx.quadraticCurveTo(
+      p.x, p.y - height * 1.11,
+      p.x + width * 0.34, p.y - height * 0.94
+    );
+    ctx.lineTo(p.x + width * 0.34, p.y);
     ctx.stroke();
+
     ctx.restore();
   }
 
-  function drawPlayer(time, w, h) {
-    const x = w / 2;
-    const y = h * 0.79;
-    const radius = Math.max(8, Math.min(w, h) * 0.035);
-    const bob = Math.sin(time / 110) * 1.2;
+  function drawPlayer(w, h) {
+    const x = w * 0.5;
+    const y = h * 0.765;
+    const radius = Math.max(9, Math.min(w, h) * 0.036);
+
+    const glow = ctx.createRadialGradient(
+      x, y, 1,
+      x, y, radius * 3.8
+    );
+
+    glow.addColorStop(0, 'rgba(255,226,120,0.58)');
+    glow.addColorStop(0.28, 'rgba(241,185,55,0.25)');
+    glow.addColorStop(1, 'rgba(255,190,40,0)');
+
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 3.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ظل الكرة على الطريق.
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    ctx.ellipse(
+      x, y + radius * 1.2,
+      radius * 1.15, radius * 0.35,
+      0, 0, Math.PI * 2
+    );
+    ctx.fill();
+
+    const ball = ctx.createRadialGradient(
+      x - radius * 0.32,
+      y - radius * 0.38,
+      radius * 0.05,
+      x, y, radius
+    );
+
+    ball.addColorStop(0, '#fffbd6');
+    ball.addColorStop(0.28, '#ffe88b');
+    ball.addColorStop(0.64, '#e7ae32');
+    ball.addColorStop(1, '#8b5812');
 
     ctx.save();
+    ctx.shadowColor = GOLD;
+    ctx.shadowBlur = 16;
 
-    const shadow = ctx.createRadialGradient(
-      x, y + radius * 0.8, 1,
-      x, y + radius * 0.8, radius * 2.4
-    );
-
-    shadow.addColorStop(0, 'rgba(233,184,63,0.25)');
-    shadow.addColorStop(1, 'rgba(0,0,0,0)');
-
-    ctx.fillStyle = shadow;
+    ctx.fillStyle = ball;
     ctx.beginPath();
-    ctx.ellipse(x, y + radius, radius * 2.4, radius, 0, 0, Math.PI * 2);
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    const gradient = ctx.createRadialGradient(
-      x - radius * 0.35, y - radius * 0.4 + bob, 1,
-      x, y + bob, radius
-    );
-
-    gradient.addColorStop(0, '#fffde0');
-    gradient.addColorStop(0.4, '#ffdf72');
-    gradient.addColorStop(1, '#9c610e');
-
-    ctx.shadowColor = COLORS.light;
-    ctx.shadowBlur = 22;
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(x, y + bob, radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = 'rgba(255,248,204,0.9)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.arc(x, y + bob, radius * 0.72, Math.PI * 1.08, Math.PI * 1.85);
+    ctx.strokeStyle = 'rgba(255,245,187,0.9)';
+    ctx.lineWidth = 1.1;
     ctx.stroke();
 
     ctx.restore();
@@ -444,244 +554,287 @@
   function drawHUD(w) {
     ctx.save();
     ctx.textAlign = 'center';
-    ctx.font = 'bold 13px system-ui, sans-serif';
-    ctx.fillStyle = COLORS.light;
-    ctx.shadowColor = COLORS.gold;
-    ctx.shadowBlur = 7;
-    ctx.fillText(`البلورات ${collected}/${CRYSTAL_COUNT}`, w / 2, 25);
+    ctx.textBaseline = 'top';
+    ctx.font = '600 15px sans-serif';
+    ctx.shadowColor = GOLD;
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = GOLD_LIGHT;
+    ctx.fillText('البلورات ' + crystals + '/2', w * 0.5, 22);
     ctx.restore();
   }
 
   function drawOverlay(w, h) {
     if (!paused && !won) return;
 
-    ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillStyle = 'rgba(0,0,0,0.58)';
     ctx.fillRect(0, 0, w, h);
 
+    ctx.save();
     ctx.textAlign = 'center';
-    ctx.fillStyle = COLORS.light;
-    ctx.font = 'bold 22px system-ui, sans-serif';
-    ctx.fillText(
-      won ? 'اكتملت المرحلة!' : 'اللعبة متوقفة',
-      w / 2,
-      h / 2 - 6
-    );
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = GOLD;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = GOLD_LIGHT;
+    ctx.font = 'bold 26px sans-serif';
 
-    ctx.fillStyle = COLORS.text;
-    ctx.font = '14px system-ui, sans-serif';
-    ctx.fillText(
-      won ? 'اضغط «المرحلة التالية» للمتابعة' : 'اضغط زر التشغيل للاستئناف',
-      w / 2,
-      h / 2 + 25
-    );
+    if (won) {
+      ctx.fillText('اكتملت المرحلة!', w * 0.5, h * 0.43);
+      ctx.font = '16px sans-serif';
+      ctx.fillText('يمكنك الانتقال إلى المرحلة التالية', w * 0.5, h * 0.50);
+    } else {
+      ctx.fillText('اللعبة متوقفة', w * 0.5, h * 0.48);
+      ctx.font = '15px sans-serif';
+      ctx.fillText('اضغط استئناف للمتابعة', w * 0.5, h * 0.55);
+    }
 
     ctx.restore();
   }
 
-  function drawMessage(time, w, h) {
-    if (!message || time > messageUntil || won || paused) return;
+  function drawMessage(w, h) {
+    if (!message || performance.now() > messageUntil) return;
 
     ctx.save();
     ctx.textAlign = 'center';
-    ctx.font = 'bold 14px system-ui, sans-serif';
-    ctx.fillStyle = COLORS.light;
-    ctx.shadowColor = COLORS.gold;
-    ctx.shadowBlur = 8;
-    ctx.fillText(message, w / 2, Math.min(52, h * 0.14));
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 14px sans-serif';
+
+    const width = Math.min(w - 32, 300);
+    const x = w * 0.5;
+    const y = h * 0.64;
+
+    ctx.fillStyle = 'rgba(8,7,4,0.88)';
+    ctx.strokeStyle = 'rgba(220,175,67,0.65)';
+    ctx.lineWidth = 1;
+
+    ctx.beginPath();
+    ctx.roundRect(x - width / 2, y - 20, width, 40, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = GOLD_LIGHT;
+    ctx.fillText(message, x, y);
     ctx.restore();
   }
 
-  function render(time) {
+  function render() {
     syncCanvas();
 
-    const { width: w, height: h } = dimensions();
+    const size = dimensions();
+    const w = size.w;
+    const h = size.h;
 
     ctx.clearRect(0, 0, w, h);
-    drawSky(time, w, h);
+    drawSky(w, h);
 
-    const startZ = Math.max(0, player.z - 2);
-    const endZ = Math.min(worldLength, player.z + 17);
+    // رسم البعيد أولًا، ثم الصفوف القريبة.
+    const startZ = Math.floor(player.visualZ + 19);
+    const endZ = Math.max(0, Math.floor(player.visualZ - 2));
 
-    // ارسم الأجزاء البعيدة قبل القريبة.
-    for (let z = endZ; z >= startZ; z--) {
+    for (let z = startZ; z >= endZ; z--) {
       for (let lane = 0; lane < LANES; lane++) {
-        drawTile(lane, z, time, w, h);
+        drawTile(lane, z, w, h);
       }
 
-      for (const crystal of crystals) {
-        if (crystal.z === z) drawCrystal(crystal, time, h);
-      }
+      crystalPositions.forEach(function (crystal) {
+        if (crystal.z === z) drawCrystal(crystal, w, h);
+      });
 
-      if (portalZ === z) drawPortal(time, h);
+      if (z === portalZ) drawPortal(w, h);
     }
 
-    drawPlayer(time, w, h);
+    // إظهار العناصر القريبة حتى لا تختفي عند حدود المشهد.
+    crystalPositions.forEach(function (crystal) {
+      if (crystal.z < endZ || crystal.z > startZ) {
+        drawCrystal(crystal, w, h);
+      }
+    });
+
+    if (portalZ < endZ || portalZ > startZ) {
+      drawPortal(w, h);
+    }
+
+    drawPlayer(w, h);
     drawHUD(w);
+    drawMessage(w, h);
     drawOverlay(w, h);
-    drawMessage(time, w, h);
+
+    updateStats();
   }
 
-  function sound() {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-
-      if (!audioContext) audioContext = new AudioCtx();
-      if (audioContext.state === 'suspended') audioContext.resume();
-
-      const oscillator = audioContext.createOscillator();
-      const gain = audioContext.createGain();
-
-      oscillator.type = 'sine';
-      oscillator.frequency.value = 520;
-      gain.gain.setValueAtTime(0.03, audioContext.currentTime);
-      gain.gain.exponentialRampToValueAtTime(
-        0.001,
-        audioContext.currentTime + 0.07
-      );
-
-      oscillator.connect(gain);
-      gain.connect(audioContext.destination);
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.07);
-    } catch (_) {}
-  }
-
-  function checkCollection() {
-    for (const crystal of crystals) {
+  function collectCrystals() {
+    crystalPositions.forEach(function (crystal) {
       if (
-        !crystal.taken &&
-        crystal.lane === player.lane &&
-        crystal.z === player.z
+        !crystal.collected &&
+        crystal.z === player.z &&
+        crystal.lane === player.lane
       ) {
-        crystal.taken = true;
-        collected++;
-        say('جمعت بلورة ذهبية!');
+        crystal.collected = true;
+        crystals++;
+        say('تم جمع البلورة الذهبية!');
       }
-    }
+    });
+  }
 
+  function checkWin() {
     if (player.z >= portalZ && player.lane === routeLane(portalZ)) {
-      if (collected >= CRYSTAL_COUNT) {
+      if (crystals >= 2) {
         won = true;
-        completedLevels = Math.max(completedLevels, level);
-        bestLevel = Math.max(bestLevel, level + 1);
-        saveProgress();
-        say('أحسنت! وصلت إلى البوابة', 5000);
+        paused = false;
+        say('اكتملت المرحلة بنجاح!');
+        updateStats();
       } else {
-        player.z = Math.max(0, portalZ - 1);
+        player.z = portalZ - 1;
         say('اجمع البلورتين أولًا');
       }
     }
-
-    stats();
   }
 
   function move(direction) {
     if (paused || won) return;
 
-    let lane = player.lane;
-    let z = player.z;
+    let nextLane = player.lane;
+    let nextZ = player.z;
 
-    if (direction === 'up') z++;
-    else if (direction === 'down') z--;
-    else if (direction === 'left') lane--;
-    else if (direction === 'right') lane++;
-    else return;
+    if (direction === 'left') nextLane--;
+    if (direction === 'right') nextLane++;
+    if (direction === 'up') nextZ++;
+    if (direction === 'down') nextZ = Math.max(0, nextZ - 1);
 
-    lane = Math.max(0, Math.min(LANES - 1, lane));
-    z = Math.max(0, Math.min(portalZ, z));
+    nextLane = Math.max(0, Math.min(LANES - 1, nextLane));
 
-    if (lane === player.lane && z === player.z) return;
+    if (nextZ === player.z && nextLane === player.lane) return;
 
-    if (!isOpen(lane, z)) {
-      say('كتلة سوداء تسد الطريق');
+    if (!canStand(nextLane, nextZ)) {
+      say('الكتلة تمنع المرور');
       return;
     }
 
-    player.lane = lane;
-    player.z = z;
+    player.lane = nextLane;
+    player.z = nextZ;
     moves++;
 
-    sound();
-    checkCollection();
-    stats();
+    collectCrystals();
+    checkWin();
+    updateStats();
   }
 
   function restartLevel() {
+    player = {
+      lane: CENTER_LANE,
+      z: 0,
+      visualLane: CENTER_LANE,
+      visualZ: 0
+    };
+
+    moves = 0;
+    crystals = 0;
+    elapsed = 0;
+    paused = false;
+    won = false;
+    message = '';
+
     generateWorld();
-    saveProgress();
-    stats();
+    updateStats();
   }
 
   function nextLevel() {
     if (!won) {
-      say('أكمل المرحلة واجمع البلورتين أولًا');
+      say('أكمل المرحلة أولًا');
       return;
     }
 
     level++;
-    bestLevel = Math.max(bestLevel, level);
     saveProgress();
-    generateWorld();
-    say(`بدأت المرحلة ${level}`);
-    stats();
+    restartLevel();
+    say('المرحلة ' + level);
   }
 
   function togglePause() {
     if (won) return;
 
     paused = !paused;
-    say(paused ? 'تم إيقاف اللعبة' : 'استأنفت اللعب');
-    stats();
+    updateStats();
   }
 
-  // اللمس والسحب على اللوحة مباشرة.
-  canvas.style.touchAction = 'none';
-
-  canvas.addEventListener('pointerdown', event => {
+  function onPointerDown(event) {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
 
-    touchStart = {
+    pointerStart = {
       x: event.clientX,
       y: event.clientY,
-      id: event.pointerId
+      time: performance.now()
     };
 
-    try {
-      canvas.setPointerCapture(event.pointerId);
-    } catch (_) {}
-  });
+    if (canvas.setPointerCapture) {
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch (_) {}
+    }
+  }
 
-  canvas.addEventListener('pointerup', event => {
-    if (!touchStart || touchStart.id !== event.pointerId) return;
+  function onPointerUp(event) {
+    if (!pointerStart) return;
 
-    const dx = event.clientX - touchStart.x;
-    const dy = event.clientY - touchStart.y;
-    const distance = Math.hypot(dx, dy);
+    const dx = event.clientX - pointerStart.x;
+    const dy = event.clientY - pointerStart.y;
+    const duration = performance.now() - pointerStart.time;
 
-    if (distance < 22) {
-      const rect = canvas.getBoundingClientRect();
-      const ratio = (event.clientX - rect.left) / Math.max(1, rect.width);
+    pointerStart = null;
 
-      if (ratio < 0.34) move('left');
-      else if (ratio > 0.66) move('right');
-      else move('up');
-    } else if (Math.abs(dx) > Math.abs(dy)) {
+    if (paused || won) return;
+
+    const threshold = 22;
+
+    if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) {
+      if (duration < 500) {
+        move('up');
+      }
+      return;
+    }
+
+    if (Math.abs(dx) > Math.abs(dy)) {
       move(dx < 0 ? 'left' : 'right');
     } else {
       move(dy < 0 ? 'up' : 'down');
     }
+  }
 
-    touchStart = null;
+  function onKeyDown(event) {
+    const map = {
+      ArrowLeft: 'left',
+      ArrowRight: 'right',
+      ArrowUp: 'up',
+      ArrowDown: 'down',
+      a: 'left',
+      d: 'right',
+      w: 'up',
+      s: 'down'
+    };
+
+    const direction = map[event.key];
+    if (direction) {
+      event.preventDefault();
+      move(direction);
+    }
+
+    if (event.key === 'Escape' || event.key === ' ') {
+      event.preventDefault();
+      togglePause();
+    }
+  }
+
+  canvas.style.touchAction = 'none';
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', function () {
+    pointerStart = null;
   });
 
-  canvas.addEventListener('pointercancel', () => {
-    touchStart = null;
-  });
-
-  document.addEventListener('drder:move', event => {
-    move(event.detail && event.detail.direction);
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('drder:move', function (event) {
+    if (event.detail && event.detail.direction) {
+      move(event.detail.direction);
+    }
   });
 
   document.addEventListener('drder:restart', restartLevel);
@@ -689,41 +842,49 @@
   document.addEventListener('drder:next', nextLevel);
   document.addEventListener('drder:resize', syncCanvas);
 
-  document.addEventListener('keydown', event => {
-    const map = {
-      ArrowUp: 'up',
-      ArrowDown: 'down',
-      ArrowLeft: 'left',
-      ArrowRight: 'right',
-      w: 'up',
-      s: 'down',
-      a: 'left',
-      d: 'right'
-    };
+  const restartButton = document.getElementById('restartButton');
+  const nextButton = document.getElementById('nextButton');
+  const pauseButton = document.getElementById('pauseButton');
 
-    if (map[event.key]) {
-      event.preventDefault();
-      move(map[event.key]);
-    }
-  });
+  if (restartButton) {
+    restartButton.addEventListener('click', restartLevel);
+  }
 
-  function loop(time) {
+  if (nextButton) {
+    nextButton.addEventListener('click', nextLevel);
+  }
+
+  if (pauseButton) {
+    pauseButton.addEventListener('click', togglePause);
+  }
+
+  function frame(time) {
+    animationId = requestAnimationFrame(frame);
+
     if (!lastFrame) lastFrame = time;
-
-    const delta = Math.min(time - lastFrame, 100);
+    const delta = Math.min(0.1, (time - lastFrame) / 1000);
     lastFrame = time;
 
-    if (!paused && !won) elapsed += delta;
+    if (!paused && !won) {
+      elapsed += delta;
 
-    render(time);
-    stats();
+      // حركة سلسة للكاميرا خلف الكرة.
+      player.visualLane += (player.lane - player.visualLane) * 0.18;
+      player.visualZ += (player.z - player.visualZ) * 0.18;
 
-    animationId = requestAnimationFrame(loop);
+      if (time - lastSecond >= 250) {
+        lastSecond = time;
+        updateStats();
+      }
+    }
+
+    render();
   }
 
   loadProgress();
   generateWorld();
-
+  updateStats();
+  syncCanvas();
   cancelAnimationFrame(animationId);
-  animationId = requestAnimationFrame(loop);
+  animationId = requestAnimationFrame(frame);
 })();
