@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'drder-light-v3';
+const CACHE_NAME = 'drder-light-v4';
 
 const APP_FILES = [
   './',
@@ -11,7 +11,8 @@ const APP_FILES = [
   './192.png',
   './512.png',
   './walk.mp3',
-  './Door.mp3'
+  './Door.mp3',
+  './hurt.mp3'
 ];
 
 self.addEventListener('install', (event) => {
