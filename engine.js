@@ -1,5 +1,5 @@
 /* DrDer-Light — engine.js
-   متاهة Raycasting، مفاتيح، أبواب، حفر حقيقية (Floor Casting)، أسهم حمراء خادعة، عصا تحكم.
+   متاهة Raycasting، مفاتيح، أبواب، حفر حقيقية (Floor Casting)، أسهم خادعة على الجدران، عصا تحكم.
 */
 (() => {
   'use strict';
@@ -8,7 +8,7 @@
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const SAVE_KEY = 'drder-light-save-v10';
+  const SAVE_KEY = 'drder-light-save-v11';
   const CRYSTAL_COUNT = 2;
   const MAZE_W = 21;
   const MAZE_H = 51;
@@ -25,6 +25,7 @@
   let won = false;
   let success = false;
   let dead = false;
+  let deathTime = 0;
   let message = '';
   let messageUntil = 0;
   let animationId = 0;
@@ -34,8 +35,8 @@
   let maze = [];
   let crystalsPos = [];
   let portalPos = { x: 1.5, y: 1.5 };
-  let pits = []; // حفر حقيقية
-  let decoySigns = []; // أسهم حمراء خادعة
+  let pits = [];
+  let decoySigns = [];
 
   let joystickActive = false;
   let joystickBaseX = 0;
@@ -55,6 +56,10 @@
   let doorAudio = null;
   let hurtAudio = null;
   let isWalking = false;
+
+  // Depth buffer for wall occlusion (1D per column)
+  let depthBuffer = [];
+  let numRays = 0;
 
   const $ = id => document.getElementById(id);
 
@@ -103,7 +108,7 @@
       }
     }
 
-    // حفر حقيقية (Pits) — ليست مجرد رسم، بل تسبب الموت
+    // حفر حقيقية (Pits) - تسبب الموت عند السقوط
     for (let i = 0; i < 15; i++) {
       const px = 3 + Math.floor(Math.random() * (MAZE_W - 6));
       const py = 5 + Math.floor(Math.random() * (MAZE_H - 10));
@@ -112,16 +117,28 @@
       }
     }
 
-    // أسهم خادعة باللون الأحمر
+    // أسهم خادعة على الجدران (تُرسم فقط عند رؤيتها)
     for (let i = 0; i < 12; i++) {
       const sx = 3 + Math.floor(Math.random() * (MAZE_W - 6));
       const sy = 5 + Math.floor(Math.random() * (MAZE_H - 10));
       if (maze[sy][sx] === 0) {
-        decoySigns.push({ 
-          x: sx + 0.5, 
-          y: sy + 0.5, 
-          angle: Math.floor(Math.random() * 4) * (Math.PI / 2) 
-        });
+        // ابحث عن جدار مجاور لرسم السهم عليه
+        const walls = [];
+        if (maze[sy - 1] && maze[sy - 1][sx] === 1) walls.push({ dx: 0, dy: -1, angle: Math.PI });
+        if (maze[sy + 1] && maze[sy + 1][sx] === 1) walls.push({ dx: 0, dy: 1, angle: 0 });
+        if (maze[sy][sx - 1] === 1) walls.push({ dx: -1, dy: 0, angle: -Math.PI / 2 });
+        if (maze[sy][sx + 1] === 1) walls.push({ dx: 1, dy: 0, angle: Math.PI / 2 });
+        
+        if (walls.length > 0) {
+          const w = walls[Math.floor(Math.random() * walls.length)];
+          decoySigns.push({
+            x: sx + 0.5 + w.dx * 0.45,
+            y: sy + 0.5 + w.dy * 0.45,
+            angle: w.angle,
+            wallX: sx + 0.5,
+            wallY: sy + 0.5
+          });
+        }
       }
     }
 
@@ -237,7 +254,6 @@
   const sound = {
     crystal: () => { tone(880, 0.10, 0.05); setTimeout(() => tone(1320, 0.14, 0.04), 70); },
     win: () => { tone(660, 0.14, 0.06); setTimeout(() => tone(990, 0.14, 0.06), 90); setTimeout(() => tone(1320, 0.22, 0.055), 200); }
-    // تم إزالة صوت الاصطدام المزعج
   };
 
   function syncCanvas() {
@@ -254,6 +270,7 @@
     const dims = syncCanvas();
     const { w, h } = dims;
 
+    // خلفية السماء والأرضية
     const sky = ctx.createLinearGradient(0, 0, 0, h * 0.5);
     sky.addColorStop(0, '#020202');
     sky.addColorStop(1, '#0a0805');
@@ -267,12 +284,15 @@
     ctx.fillRect(0, h * 0.5, w, h * 0.5);
 
     const fov = Math.PI / 3;
-    const numRays = Math.min(w, 280);
+    numRays = Math.min(w, 280);
     const rayStep = w / numRays;
     const dirX = Math.cos(player.angle);
     const dirY = Math.sin(player.angle);
     const camX = -dirY * 0.66;
     const camY = dirX * 0.66;
+
+    // Initialize depth buffer
+    depthBuffer = new Array(numRays).fill(Infinity);
 
     for (let i = 0; i < numRays; i++) {
       const screenX = i * rayStep;
@@ -308,6 +328,8 @@
       else perpWallDist = (sideDistY - deltaDistY);
       if (perpWallDist < 0.1) perpWallDist = 0.1;
 
+      depthBuffer[i] = perpWallDist;
+
       const wallH = Math.floor((h / perpWallDist) * 0.75);
       let drawStart = Math.floor(-wallH / 2 + h / 2);
       let drawEnd = Math.floor(wallH / 2 + h / 2);
@@ -331,7 +353,7 @@
       }
     }
 
-    // رسم الحفر الحقيقية (Pits) على الأرضية — تبدو كعمق أسود
+    // رسم الحفر على الأرضية (Pits) - فقط إذا كانت مرئية
     pits.forEach(pit => {
       const dx = pit.x - player.x, dy = pit.y - player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -339,10 +361,9 @@
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
 
-      if (Math.abs(diff) < fov / 2 && dist > 0.2) {
+      if (Math.abs(diff) < fov / 2 && dist > 0.2 && dist < 15) {
         const screenX = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
         if (screenX >= 0 && screenX <= w) {
-          // حجم الحفرة بناءً على المسافة
           const size = Math.max(8, 60 / dist);
           const yPos = h / 2 + (h / dist) * 0.1;
           
@@ -357,7 +378,7 @@
           ctx.ellipse(screenX, yPos, size * 1.2, size * 0.5, 0, 0, Math.PI * 2);
           ctx.fill();
           
-          // أشواك حمراء داخل الحفرة (لتبدو خطيرة)
+          // أشواك حمراء داخل الحفرة
           ctx.fillStyle = '#661111';
           for (let s = -1; s <= 1; s++) {
             ctx.beginPath();
@@ -371,7 +392,7 @@
       }
     });
 
-    // رسم الأسهم الخادعة باللون الأحمر
+    // رسم الأسهم الخادعة على الجدران (فقط عند رؤيتها)
     decoySigns.forEach(s => {
       const dx = s.x - player.x, dy = s.y - player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -379,28 +400,32 @@
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
 
-      if (Math.abs(diff) < fov / 2 && dist > 0.2) {
+      if (Math.abs(diff) < fov / 2 && dist > 0.2 && dist < 12) {
         const screenX = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
         if (screenX >= 0 && screenX <= w) {
-          const size = Math.max(6, 40 / dist);
-          const yPos = h / 2 - size * 0.5;
-          ctx.save();
-          ctx.translate(screenX, yPos);
-          ctx.rotate(s.angle - player.angle);
-          // سهم أحمر خادع
-          ctx.fillStyle = 'rgba(255, 51, 51, 0.7)';
-          ctx.shadowColor = RED;
-          ctx.shadowBlur = 10;
-          ctx.beginPath();
-          ctx.moveTo(0, -size);
-          ctx.lineTo(size * 0.6, 0);
-          ctx.lineTo(size * 0.2, 0);
-          ctx.lineTo(size * 0.2, size);
-          ctx.lineTo(-size * 0.2, size);
-          ctx.lineTo(-size * 0.2, 0);
-          ctx.lineTo(-size * 0.6, 0);
-          ctx.fill();
-          ctx.restore();
+          // تحقق من عدم حجب السهم بواسطة جدار
+          const rayIndex = Math.floor((screenX / w) * numRays);
+          if (rayIndex >= 0 && rayIndex < numRays && depthBuffer[rayIndex] > dist - 0.5) {
+            const size = Math.max(6, 40 / dist);
+            const yPos = h / 2 - size * 0.5;
+            ctx.save();
+            ctx.translate(screenX, yPos);
+            ctx.rotate(s.angle - player.angle);
+            // سهم أحمر خادع
+            ctx.fillStyle = 'rgba(255, 51, 51, 0.7)';
+            ctx.shadowColor = RED;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.moveTo(0, -size);
+            ctx.lineTo(size * 0.6, 0);
+            ctx.lineTo(size * 0.2, 0);
+            ctx.lineTo(size * 0.2, size);
+            ctx.lineTo(-size * 0.2, size);
+            ctx.lineTo(-size * 0.2, 0);
+            ctx.lineTo(-size * 0.6, 0);
+            ctx.fill();
+            ctx.restore();
+          }
         }
       }
     });
@@ -469,6 +494,24 @@
           ctx.restore();
         }
       }
+    }
+
+    // رسم قطرات الدم عند الموت
+    if (dead && performance.now() - deathTime < 2000) {
+      const t = (performance.now() - deathTime) / 2000;
+      const alpha = Math.max(0, 1 - t);
+      ctx.save();
+      ctx.fillStyle = `rgba(200, 0, 0, ${alpha})`;
+      // بقع دم عشوائية
+      for (let i = 0; i < 20; i++) {
+        const rx = (Math.sin(i * 12.9898 + deathTime) * 0.5 + 0.5) * w;
+        const ry = (Math.sin(i * 78.233 + deathTime) * 0.5 + 0.5) * h;
+        const rs = 5 + Math.sin(i * 3.7) * 15;
+        ctx.beginPath();
+        ctx.arc(rx, ry, Math.max(1, rs * (1 - t)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
     }
 
     drawHUD(w, h);
@@ -637,7 +680,6 @@
         checkPits();
         startWalkSound();
       } else {
-        // تمت إزالة الصوت المزعج عند الاصطدام
         stopWalkSound();
       }
     } else {
@@ -651,6 +693,7 @@
       const dx = p.x - player.x, dy = p.y - player.y;
       if (Math.sqrt(dx * dx + dy * dy) < 0.5) {
         dead = true;
+        deathTime = performance.now();
         stopWalkSound();
         playHurtSound();
       }
