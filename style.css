@@ -1,0 +1,177 @@
+
+/* DrDer-light — Visual refinement */
+
+:root {
+  --dl-black: #080808;
+  --dl-panel: #121212;
+  --dl-gold: #e9b936;
+  --dl-light-gold: #ffe69a;
+  --dl-muted: #8d8779;
+  --dl-border: #39301a;
+}
+
+html {
+  background: var(--dl-black);
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background:
+    radial-gradient(
+      ellipse at 50% 15%,
+      rgba(199, 147, 34, 0.055),
+      transparent 45%
+    ),
+    var(--dl-black);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--dl-light-gold);
+  outline-offset: 3px;
+}
+
+.app {
+  isolation: isolate;
+}
+
+.brand img {
+  border: 1px solid rgba(233, 185, 54, 0.28);
+  box-shadow: 0 0 18px rgba(233, 185, 54, 0.08);
+}
+
+.scene {
+  isolation: isolate;
+  background:
+    radial-gradient(
+      ellipse at 50% 42%,
+      rgba(194, 145, 39, 0.12),
+      transparent 60%
+    ),
+    linear-gradient(155deg, #11100c, #070707 75%);
+  border-color: rgba(233, 185, 54, 0.48);
+  box-shadow:
+    inset 0 0 35px rgba(0, 0, 0, 0.9),
+    0 0 24px rgba(233, 185, 54, 0.035);
+}
+
+#gameCanvas {
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stat {
+  box-shadow: inset 0 1px rgba(255, 230, 154, 0.025);
+}
+
+.stat-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.control,
+.action,
+.icon-button {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    transform 100ms ease,
+    box-shadow 120ms ease;
+}
+
+.control:hover,
+.action:hover,
+.icon-button:hover {
+  border-color: var(--dl-gold);
+  box-shadow: 0 0 12px rgba(233, 185, 54, 0.08);
+}
+
+.control:active,
+.action:active,
+.icon-button:active {
+  transform: scale(0.96);
+}
+
+.control {
+  min-width: 48px;
+  min-height: 48px;
+}
+
+.action {
+  padding: 9px 12px;
+}
+
+.level-tag {
+  white-space: nowrap;
+}
+
+.message {
+  line-height: 1.8;
+}
+
+.footer {
+  letter-spacing: 1.8px;
+}
+
+dialog {
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.8);
+}
+
+dialog .action {
+  width: 100%;
+  max-width: none;
+}
+
+@media (min-width: 700px) {
+  .app {
+    padding-top: 24px;
+    padding-bottom: 24px;
+  }
+
+  .scene {
+    max-height: 460px;
+  }
+}
+
+@media (max-width: 360px) {
+  .app {
+    padding-inline: 10px;
+    gap: 12px;
+  }
+
+  .brand h1 {
+    font-size: 18px;
+  }
+
+  .brand img {
+    width: 46px;
+    height: 46px;
+  }
+
+  .controls {
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(2, 49px);
+  }
+
+  .stat-label {
+    font-size: 10px;
+  }
+
+  .stat-value {
+    font-size: 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control,
+  .action,
+  .icon-button {
+    transition: none;
+  }
+}
