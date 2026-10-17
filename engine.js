@@ -1,5 +1,5 @@
 /* DrDer-Light — engine.js
-   متاهة حقيقية بـ Raycasting مع تصحيح زوايا Canvas.
+   متاهة حقيقية بـ Raycasting. إضاءة محسّنة، جدران صلبة، أرضية ذهبية.
 */
 (() => {
   'use strict';
@@ -29,8 +29,7 @@
   let lastFrame = 0;
   let lastTick = 0;
 
-  // اللاعب
-  let player = { x: 1.5, y: 1.5, angle: 0 }; // angle = 0 يعني النظر للأسفل (جنوباً)
+  let player = { x: 1.5, y: 1.5, angle: 0 };
   let maze = [];
   let crystalsPos = [];
   let portalPos = { x: 1.5, y: 1.5 };
@@ -62,22 +61,18 @@
       stack.push(nxt);
     }
 
-    // فتح ممرات أفقية لإنشاء 7 مسارات
     for (let y = 3; y < MAZE_H - 3; y += 4) {
       for (let x = 1; x < MAZE_W - 1; x++) {
         if (Math.random() > 0.35) maze[y][x] = 0;
       }
     }
 
-    // البداية: الكرة تنظر للأسفل (جنوباً)
     player = { x: 1.5, y: 1.5, angle: 0 };
     maze[1][1] = 0;
 
-    // البوابة
     portalPos = { x: MAZE_W - 2.5, y: MAZE_H - 2.5 };
     maze[MAZE_H - 2][MAZE_W - 2] = 0;
 
-    // البلورات
     crystalsPos = [];
     const used = new Set(['1,1']);
     let tries = 0;
@@ -176,19 +171,16 @@
     const dirX = Math.cos(player.angle);
     const dirY = Math.sin(player.angle);
 
-    // مستوى الكاميرا
     const camX = -dirY * 0.66;
     const camY = dirX * 0.66;
 
     for (let i = 0; i < numRays; i++) {
       const screenX = i * rayStep;
-      // نسبة من -1 إلى 1
       const cameraRatio = 2 * i / numRays - 1;
 
       const rayDirX = dirX + camX * cameraRatio;
       const rayDirY = dirY + camY * cameraRatio;
 
-      // DDA
       let mapX = Math.floor(player.x);
       let mapY = Math.floor(player.y);
 
@@ -230,24 +222,20 @@
       if (drawStart < 0) drawStart = 0;
       if (drawEnd > h) drawEnd = h;
 
-      // ألوان الجدران: رمادي داكن جداً (أسود تقريباً) مع تظليل
-      let color;
-      if (side === 0) color = `rgb(15, 15, 15)`;
-      else color = `rgb(8, 8, 8)`;
+      // إضاءة الجدار بناءً على المسافة والاتجاه
+      let baseColor = side === 0 ? [18, 16, 12] : [10, 9, 7]; // ألوان أساسية للجدران
+      const shade = Math.min(1, 2.5 / perpWallDist); // كلما زاد البعد كلما زاد الظلام
+      const r = Math.floor(baseColor[0] * shade);
+      const g = Math.floor(baseColor[1] * shade);
+      const b = Math.floor(baseColor[2] * shade);
 
-      // إضاءة حسب المسافة (اختياري)
-      const shade = Math.min(1, 3 / perpWallDist);
-      const r = Math.floor(10 * shade);
-      const g = Math.floor(10 * shade);
-      const b = Math.floor(10 * shade);
-      
       ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
       ctx.fillRect(screenX, drawStart, rayStep + 1, drawEnd - drawStart);
 
       // خط ذهبي رفيع على حافة الجدار العلوية
       if (wallH > 5) {
-        ctx.fillStyle = 'rgba(233,184,63,0.15)';
-        ctx.fillRect(screenX, drawStart, rayStep + 1, Math.max(1, wallH * 0.01));
+        ctx.fillStyle = 'rgba(233,184,63,0.25)';
+        ctx.fillRect(screenX, drawStart, rayStep + 1, Math.max(1, wallH * 0.015));
       }
     }
 
@@ -256,10 +244,7 @@
       if (c.collected) return;
       const dx = c.x - player.x, dy = c.y - player.y;
       const dist = Math.sqrt(dx*dx + dy*dy);
-
-      // الزاوية النسبية للكرة
-      const angleToCrystal = Math.atan2(dy, dx);
-      let diff = angleToCrystal - player.angle;
+      let diff = Math.atan2(dy, dx) - player.angle;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
 
@@ -267,7 +252,7 @@
         const screenX = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
         if (screenX < 0 || screenX > w) return;
         const size = Math.max(2, 30 / dist);
-        const yPos = h / 2; // في الأفق
+        const yPos = h / 2; 
         ctx.save();
         ctx.shadowColor = GOLD; ctx.shadowBlur = 18;
         ctx.fillStyle = GOLD;
@@ -299,6 +284,13 @@
         }
       }
     }
+
+    // رسم هالة الكرة في الأسفل
+    const glow = ctx.createRadialGradient(w/2, h*0.9, 5, w/2, h*0.9, w*0.4);
+    glow.addColorStop(0, 'rgba(233,184,63,0.15)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, h*0.5, w, h*0.5);
 
     drawHUD(w, h);
     drawMessage(w, h);
