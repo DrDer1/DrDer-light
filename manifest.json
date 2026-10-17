@@ -1,15 +1,14 @@
-
 {
   "id": "./",
   "name": "DrDer-light",
   "short_name": "DrDer-light",
-  "description": "متاهة ذهبية ثلاثية الأبعاد. اجمع البلورات واعثر على البوابة المضيئة.",
+  "description": "طريق ذهبي لانهائي. اجمع البلورات واعثر على البوابة المضيئة.",
   "lang": "ar",
   "dir": "rtl",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "orientation": "any",
+  "orientation": "portrait",
   "background_color": "#080808",
   "theme_color": "#080808",
   "categories": [
@@ -28,6 +27,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "./512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
