@@ -12,38 +12,24 @@
   const canvas = app.canvas;
   const ctx = app.ctx;
 
-  const COLS = 9;
-  const ROWS = 9;
-  const TILE_W = 48;
-  const TILE_H = 24;
-  const BLOCK_H = 16;
-  const CRYSTAL_COUNT = 2;
   const SAVE_KEY = 'drder-light-progress-v1';
-
+  const CRYSTAL_COUNT = 2;
+  const LANES = 7;
+  const CENTER_LANE = 3;
   const COLORS = {
-    background: '#080808',
-    path: '#17130b',
-    pathEdge: '#70501b',
+    background: '#050505',
     gold: '#e9b83f',
     glow: '#ffdf79',
-    blockTop: '#1b1b1b',
-    blockLeft: '#080808',
-    blockRight: '#101010',
-    blockEdge: '#3a301c',
+    path: '#17130b',
+    pathEdge: '#70501b',
+    block: '#111111',
+    blockEdge: '#352a16',
     text: '#fff4cf'
   };
 
-  const DIRECTIONS = {
-    up:    { x: 0, y: -1 },
-    down:  { x: 0, y: 1 },
-    left:  { x: -1, y: 0 },
-    right: { x: 1, y: 0 }
-  };
-
-  let maze = [];
-  let player = { x: 0, y: 0 };
-  let crystals = [];
   let level = 1;
+  let bestLevel = 1;
+  let completedLevels = 0;
   let moves = 0;
   let collected = 0;
   let elapsed = 0;
@@ -53,10 +39,18 @@
   let messageUntil = 0;
   let animationId = 0;
   let lastFrame = 0;
+  let worldLength = 36;
+  let player = { lane: CENTER_LANE, z: 0 };
+  let route = [];
+  let crystals = [];
+  let portalZ = 36;
+  let touchStart = null;
+  let lastTouchMove = 0;
+  let audioContext = null;
 
-  let bestLevel = 1;
-  let completedLevels = 0;
-  let crystalAnimation = 0;
+  function randomInt(max) {
+    return Math.floor(Math.random() * max);
+  }
 
   function readSave() {
     try {
@@ -65,18 +59,10 @@
       if (Number.isInteger(saved.level) && saved.level > 0) {
         level = saved.level;
       }
-
-      if (
-        Number.isInteger(saved.bestLevel) &&
-        saved.bestLevel > 0
-      ) {
+      if (Number.isInteger(saved.bestLevel) && saved.bestLevel > 0) {
         bestLevel = saved.bestLevel;
       }
-
-      if (
-        Number.isInteger(saved.completedLevels) &&
-        saved.completedLevels >= 0
-      ) {
+      if (Number.isInteger(saved.completedLevels) && saved.completedLevels >= 0) {
         completedLevels = saved.completedLevels;
       }
     } catch (error) {
@@ -94,495 +80,6 @@
       }));
     } catch (error) {
       console.warn('DrDer-light: تعذر حفظ التقدم.', error);
-    }
-  }
-
-  function inside(x, y) {
-    return x >= 0 && y >= 0 && x < COLS && y < ROWS;
-  }
-
-  function pointKey(x, y) {
-    return `${x},${y}`;
-  }
-
-  function randomInt(max) {
-    return Math.floor(Math.random() * max);
-  }
-
-  function shuffle(items) {
-    const result = items.slice();
-
-    for (let i = result.length - 1; i > 0; i--) {
-      const j = randomInt(i + 1);
-      [result[i], result[j]] = [result[j], result[i]];
-    }
-
-    return result;
-  }
-
-  function makeCell(x, y) {
-    return {
-      x,
-      y,
-      path: false,
-      height: 1 + randomInt(3)
-    };
-  }
-
-  function getNeighbors(x, y) {
-    return shuffle([
-      { x: x + 1, y },
-      { x: x - 1, y },
-      { x, y: y + 1 },
-      { x, y: y - 1 }
-    ].filter(p => inside(p.x, p.y)));
-  }
-
-  /*
-   * Build one guaranteed route from entrance to exit.
-   * Add connected branches, while leaving other cells as
-   * raised black blocks. Every walkable cell has height zero.
-   */
-  function generateMaze() {
-    maze = Array.from({ length: ROWS }, (_, y) =>
-      Array.from({ length: COLS }, (_, x) => makeCell(x, y))
-    );
-
-    const route = [{ x: 0, y: 0 }];
-    let x = 0;
-    let y = 0;
-
-    maze[0][0].path = true;
-
-    while (x !== COLS - 1 || y !== ROWS - 1) {
-      const canRight = x < COLS - 1;
-      const canDown = y < ROWS - 1;
-
-      let direction;
-
-      if (canRight && canDown) {
-        direction = Math.random() < 0.5 ? 'right' : 'down';
-      } else {
-        direction = canRight ? 'right' : 'down';
-      }
-
-      if (direction === 'right') x++;
-      else y++;
-
-      maze[y][x].path = true;
-      route.push({ x, y });
-    }
-
-    /*
-     * Add branches that start on the guaranteed route.
-     * Branches connect to the main route and create detours.
-     */
-    const branchCount = Math.min(12, 4 + Math.floor(level / 2));
-
-    for (let i = 0; i < branchCount; i++) {
-      const origin = route[randomInt(route.length)];
-      let bx = origin.x;
-      let by = origin.y;
-      const length = 2 + randomInt(4);
-
-      for (let step = 0; step < length; step++) {
-        const options = getNeighbors(bx, by).filter(p => {
-          const cell = maze[p.y][p.x];
-
-          if (cell.path) return false;
-
-          /*
-           * Avoid opening the exit-adjacent area as a shortcut.
-           * The guaranteed route remains valid regardless.
-           */
-          return true;
-        });
-
-        if (!options.length) break;
-
-        const next = options[0];
-        bx = next.x;
-        by = next.y;
-
-        maze[by][bx].path = true;
-        maze[by][bx].height = 0;
-      }
-    }
-
-    /*
-     * Ensure every path cell is level and all other cells
-     * remain raised blocks.
-     */
-    for (let row = 0; row < ROWS; row++) {
-      for (let col = 0; col < COLS; col++) {
-        if (maze[row][col].path) {
-          maze[row][col].height = 0;
-        }
-      }
-    }
-
-    player = { x: 0, y: 0 };
-    moves = 0;
-    collected = 0;
-    elapsed = 0;
-    won = false;
-    paused = false;
-
-    placeCrystals();
-    showMessage(`المرحلة ${level}`, 1500);
-    updateStats();
-  }
-
-  function placeCrystals() {
-    crystals = [];
-
-    const candidates = [];
-
-    for (let y = 0; y < ROWS; y++) {
-      for (let x = 0; x < COLS; x++) {
-        if (!maze[y][x].path) continue;
-        if (x === 0 && y === 0) continue;
-        if (x === COLS - 1 && y === ROWS - 1) continue;
-
-        candidates.push({ x, y });
-      }
-    }
-
-    const pool = shuffle(candidates);
-
-    for (const candidate of pool) {
-      if (crystals.length >= CRYSTAL_COUNT) break;
-
-      const separated = crystals.every(crystal => {
-        const distance =
-          Math.abs(crystal.x - candidate.x) +
-          Math.abs(crystal.y - candidate.y);
-
-        return distance >= 3;
-      });
-
-      if (separated) {
-        crystals.push({
-          x: candidate.x,
-          y: candidate.y,
-          taken: false,
-          phase: Math.random() * Math.PI * 2
-        });
-      }
-    }
-
-    /*
-     * The fallback keeps placement reliable even if the
-     * spacing rule cannot find enough candidates.
-     */
-    for (const candidate of pool) {
-      if (crystals.length >= CRYSTAL_COUNT) break;
-
-      const exists = crystals.some(crystal =>
-        crystal.x === candidate.x && crystal.y === candidate.y
-      );
-
-      if (!exists) {
-        crystals.push({
-          x: candidate.x,
-          y: candidate.y,
-          taken: false,
-          phase: Math.random() * Math.PI * 2
-        });
-      }
-    }
-  }
-
-  function project(x, y) {
-    const originX = canvas.width / 2;
-    const originY = Math.max(65, canvas.height * 0.10);
-
-    return {
-      x: originX + (x - y) * TILE_W / 2,
-      y: originY + (x + y) * TILE_H / 2
-    };
-  }
-
-  function polygon(points, fill, stroke, lineWidth = 1) {
-    ctx.beginPath();
-
-    points.forEach((point, index) => {
-      if (index === 0) {
-        ctx.moveTo(point.x, point.y);
-      } else {
-        ctx.lineTo(point.x, point.y);
-      }
-    });
-
-    ctx.closePath();
-
-    if (fill) {
-      ctx.fillStyle = fill;
-      ctx.fill();
-    }
-
-    if (stroke) {
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = lineWidth;
-      ctx.stroke();
-    }
-  }
-
-  function drawPath(cell, time) {
-    const p = project(cell.x, cell.y);
-    const halfW = TILE_W / 2;
-    const halfH = TILE_H / 2;
-
-    polygon([
-      { x: p.x, y: p.y },
-      { x: p.x + halfW, y: p.y + halfH },
-      { x: p.x, y: p.y + TILE_H },
-      { x: p.x - halfW, y: p.y + halfH }
-    ], COLORS.path, COLORS.pathEdge, 1);
-
-    const pulse = 0.38 + Math.sin(time / 350 + cell.x + cell.y) * 0.12;
-
-    ctx.save();
-    ctx.globalAlpha = pulse;
-    ctx.strokeStyle = COLORS.glow;
-    ctx.lineWidth = 1.3;
-    ctx.shadowColor = COLORS.gold;
-    ctx.shadowBlur = 5;
-
-    ctx.beginPath();
-    ctx.moveTo(p.x - halfW * 0.46, p.y + halfH);
-    ctx.lineTo(p.x, p.y + TILE_H * 0.76);
-    ctx.lineTo(p.x + halfW * 0.46, p.y + halfH);
-    ctx.stroke();
-
-    ctx.restore();
-  }
-
-  function drawBlock(cell) {
-    const p = project(cell.x, cell.y);
-    const halfW = TILE_W / 2;
-    const halfH = TILE_H / 2;
-    const height = cell.height * BLOCK_H;
-
-    const top = [
-      { x: p.x, y: p.y - height },
-      { x: p.x + halfW, y: p.y + halfH - height },
-      { x: p.x, y: p.y + TILE_H - height },
-      { x: p.x - halfW, y: p.y + halfH - height }
-    ];
-
-    const left = [
-      top[3],
-      top[2],
-      { x: top[2].x, y: top[2].y + height },
-      { x: top[3].x, y: top[3].y + height }
-    ];
-
-    const right = [
-      top[1],
-      top[2],
-      { x: top[2].x, y: top[2].y + height },
-      { x: top[1].x, y: top[1].y + height }
-    ];
-
-    polygon(left, COLORS.blockLeft, COLORS.blockEdge, 0.8);
-    polygon(right, COLORS.blockRight, COLORS.blockEdge, 0.8);
-    polygon(top, COLORS.blockTop, '#41351e', 1);
-
-    ctx.save();
-    ctx.strokeStyle = 'rgba(233,184,63,0.32)';
-    ctx.lineWidth = 1;
-
-    ctx.beginPath();
-    ctx.moveTo(top[0].x, top[0].y);
-    ctx.lineTo(top[1].x, top[1].y);
-    ctx.lineTo(top[2].x, top[2].y);
-    ctx.stroke();
-
-    ctx.restore();
-  }
-
-  function drawCrystal(crystal, time) {
-    if (crystal.taken) return;
-
-    const p = project(crystal.x, crystal.y);
-    const bob = Math.sin(time / 250 + crystal.phase) * 3;
-    const x = p.x;
-    const y = p.y + TILE_H / 2 - 11 + bob;
-
-    ctx.save();
-    ctx.shadowColor = COLORS.glow;
-    ctx.shadowBlur = 16;
-
-    polygon([
-      { x, y: y - 14 },
-      { x: x + 7, y: y - 3 },
-      { x, y: y + 8 },
-      { x: x - 7, y: y - 3 }
-    ], '#f7ce58', '#fff1b0', 1);
-
-    polygon([
-      { x, y: y - 14 },
-      { x: x + 7, y: y - 3 },
-      { x, y: y - 1 }
-    ], '#fff4b9');
-
-    polygon([
-      { x, y: y - 14 },
-      { x, y: y - 1 },
-      { x: x - 7, y: y - 3 }
-    ], '#b67b19');
-
-    ctx.restore();
-  }
-
-  function drawPortal(time) {
-    const p = project(COLS - 1, ROWS - 1);
-    const x = p.x;
-    const y = p.y + TILE_H / 2 - 9;
-    const pulse = 1 + Math.sin(time / 220) * 0.07;
-
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(pulse, pulse);
-    ctx.shadowColor = COLORS.glow;
-    ctx.shadowBlur = 19;
-
-    ctx.strokeStyle = COLORS.gold;
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.ellipse(0, -10, 12, 18, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.strokeStyle = '#fff2b0';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.ellipse(0, -10, 7, 13, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.restore();
-  }
-
-  function drawPlayer(time) {
-    const p = project(player.x, player.y);
-    const x = p.x;
-    const y = p.y + TILE_H / 2 - 10 + Math.sin(time / 140) * 1.5;
-
-    ctx.save();
-
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath();
-    ctx.ellipse(x, y + 10, 10, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.shadowColor = COLORS.glow;
-    ctx.shadowBlur = 20;
-
-    const gradient = ctx.createRadialGradient(
-      x - 4, y - 5, 1, x, y, 11
-    );
-
-    gradient.addColorStop(0, '#fffde0');
-    gradient.addColorStop(0.45, '#ffdf72');
-    gradient.addColorStop(1, '#b97b14');
-
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(x, y, 9, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-  }
-
-  function drawScene(time) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = COLORS.background;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    const mapWidth = (COLS + ROWS) * TILE_W / 2;
-    const mapHeight = (COLS + ROWS) * TILE_H / 2 + BLOCK_H * 3;
-
-    const scale = Math.min(
-      1,
-      (canvas.width * 0.92) / mapWidth,
-      (canvas.height * 0.86) / mapHeight
-    );
-
-    ctx.save();
-    ctx.translate(canvas.width / 2, canvas.height * 0.04);
-    ctx.scale(scale, scale);
-    ctx.translate(-canvas.width / 2, 0);
-
-    /*
-     * Render far cells first, then nearer cells.
-     */
-    for (let diagonal = 0; diagonal < COLS + ROWS - 1; diagonal++) {
-      for (let y = 0; y < ROWS; y++) {
-        const x = diagonal - y;
-        if (!inside(x, y)) continue;
-
-        const cell = maze[y][x];
-
-        if (cell.path) {
-          drawPath(cell, time);
-        } else {
-          drawBlock(cell);
-        }
-
-        if (x === COLS - 1 && y === ROWS - 1) {
-          drawPortal(time);
-        }
-
-        for (const crystal of crystals) {
-          if (crystal.x === x && crystal.y === y) {
-            drawCrystal(crystal, time);
-          }
-        }
-
-        if (player.x === x && player.y === y) {
-          drawPlayer(time);
-        }
-      }
-    }
-
-    ctx.restore();
-
-    if (paused || won) {
-      ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.72)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.textAlign = 'center';
-      ctx.fillStyle = COLORS.glow;
-      ctx.font = 'bold 22px sans-serif';
-
-      ctx.fillText(
-        won ? 'اكتملت المرحلة!' : 'اللعبة متوقفة',
-        canvas.width / 2,
-        canvas.height / 2 - 6
-      );
-
-      ctx.fillStyle = COLORS.text;
-      ctx.font = '14px sans-serif';
-
-      ctx.fillText(
-        won ? 'اضغط «المرحلة التالية» للمتابعة' : 'اضغط زر التشغيل للاستئناف',
-        canvas.width / 2,
-        canvas.height / 2 + 25
-      );
-
-      ctx.restore();
-    }
-
-    if (message && time < messageUntil && !won && !paused) {
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.font = 'bold 14px sans-serif';
-      ctx.fillStyle = COLORS.glow;
-      ctx.shadowColor = COLORS.gold;
-      ctx.shadowBlur = 8;
-      ctx.fillText(message, canvas.width / 2, 28);
-      ctx.restore();
     }
   }
 
@@ -607,31 +104,476 @@
     }
   }
 
-  function checkCollection() {
-    const crystal = crystals.find(item =>
-      !item.taken &&
-      item.x === player.x &&
-      item.y === player.y
-    );
+  /*
+   * Generate a continuous forward route.
+   * The route bends gradually instead of ending in a visible square.
+   */
+  function generateWorld() {
+    worldLength = Math.min(36 + level * 3, 180);
+    portalZ = worldLength;
+    route = new Array(worldLength + 1);
+    route[0] = CENTER_LANE;
 
-    if (crystal) {
-      crystal.taken = true;
-      collected++;
-      showMessage('جمعت بلورة ذهبية!');
+    let lane = CENTER_LANE;
+    let direction = 0;
+
+    for (let z = 1; z <= worldLength; z++) {
+      if (Math.random() < Math.min(0.20 + level * 0.002, 0.34)) {
+        direction = randomInt(3) - 1;
+      }
+
+      lane += direction;
+      lane = Math.max(1, Math.min(LANES - 2, lane));
+
+      if (Math.random() < 0.12) {
+        direction = 0;
+      }
+
+      route[z] = lane;
     }
 
-    if (
-      player.x === COLS - 1 &&
-      player.y === ROWS - 1
-    ) {
-      if (collected === CRYSTAL_COUNT) {
+    player = { lane: route[0], z: 0 };
+    moves = 0;
+    collected = 0;
+    elapsed = 0;
+    won = false;
+    paused = false;
+
+    placeCrystals();
+    showMessage(`المرحلة ${level}`, 1600);
+    updateStats();
+  }
+
+  function routeLane(z) {
+    z = Math.max(0, Math.min(worldLength, Math.round(z)));
+    return route[z] ?? CENTER_LANE;
+  }
+
+  function isOpen(lane, z) {
+    if (z < 0 || z > worldLength || lane < 0 || lane >= LANES) {
+      return false;
+    }
+
+    const mainLane = routeLane(z);
+
+    if (lane === mainLane) return true;
+
+    /*
+     * Side paths connect to the main route.
+     * The outer edge remains mostly blocked.
+     */
+    if (Math.abs(lane - mainLane) === 1) {
+      const seed = Math.abs(Math.sin(z * 12.9898 + lane * 78.233)) % 1;
+      return seed > 0.34;
+    }
+
+    return false;
+  }
+
+  function placeCrystals() {
+    crystals = [];
+
+    const positions = [];
+    const first = Math.max(5, Math.floor(worldLength * 0.28));
+    const second = Math.max(first + 5, Math.floor(worldLength * 0.66));
+
+    positions.push(first, Math.min(second, worldLength - 4));
+
+    positions.forEach((z, index) => {
+      crystals.push({
+        lane: routeLane(z),
+        z,
+        taken: false,
+        phase: index * 1.7
+      });
+    });
+  }
+
+  /*
+   * Perspective projection:
+   * distant objects converge near the horizon;
+   * nearby objects grow toward the bottom of the screen.
+   */
+  function project(lane, z, lift = 0) {
+    const w = canvas.width;
+    const h = canvas.height;
+    const distance = z - player.z;
+    const horizon = h * 0.27;
+    const depth = 1 / (1 + Math.max(-0.65, distance) * 0.105);
+    const perspective = Math.max(0.12, Math.min(2.7, depth));
+    const laneWidth = w * 0.115 * perspective;
+    const x = w / 2 + (lane - player.lane) * laneWidth;
+    const y = horizon + (h * 0.76) * perspective - lift * perspective;
+
+    return { x, y, scale: perspective, laneWidth };
+  }
+
+  function polygon(points, fill, stroke, lineWidth = 1) {
+    ctx.beginPath();
+    points.forEach((p, i) => {
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.closePath();
+
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+    }
+  }
+
+  function drawSky(time) {
+    const w = canvas.width;
+    const h = canvas.height;
+    const gradient = ctx.createLinearGradient(0, 0, 0, h);
+
+    gradient.addColorStop(0, '#030303');
+    gradient.addColorStop(0.45, '#100d07');
+    gradient.addColorStop(1, '#050505');
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
+
+    const glow = ctx.createRadialGradient(
+      w / 2, h * 0.3, 2,
+      w / 2, h * 0.3, w * 0.58
+    );
+
+    glow.addColorStop(0, 'rgba(190,130,25,0.13)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = COLORS.gold;
+    ctx.lineWidth = 1;
+
+    for (let i = -5; i <= 5; i++) {
+      const topX = w / 2 + i * w * 0.045;
+      const bottomX = w / 2 + i * w * 0.35;
+
+      ctx.beginPath();
+      ctx.moveTo(topX, h * 0.27);
+      ctx.lineTo(bottomX, h);
+      ctx.stroke();
+    }
+
+    for (let i = 0; i < 10; i++) {
+      const progress = ((i / 10) + (time * 0.00008) % 0.1) % 1;
+      const y = h * 0.27 + progress * progress * h * 0.75;
+
+      ctx.globalAlpha = 0.04 + progress * 0.15;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawTile(lane, z, time) {
+    const near = project(lane, z);
+    const far = project(lane, z + 1);
+    const leftNear = project(lane - 0.5, z);
+    const rightNear = project(lane + 0.5, z);
+    const leftFar = project(lane - 0.5, z + 1);
+    const rightFar = project(lane + 0.5, z + 1);
+
+    if (near.y < canvas.height * 0.24 ||
+        far.y > canvas.height * 1.5) return;
+
+    const open = isOpen(lane, z);
+
+    if (open) {
+      polygon([
+        { x: leftFar.x, y: far.y },
+        { x: rightFar.x, y: far.y },
+        { x: rightNear.x, y: near.y },
+        { x: leftNear.x, y: near.y }
+      ], COLORS.path, COLORS.pathEdge, Math.max(0.5, near.scale));
+
+      const pulse = 0.25 + (Math.sin(time / 280 + z) + 1) * 0.12;
+
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.strokeStyle = COLORS.glow;
+      ctx.shadowColor = COLORS.gold;
+      ctx.shadowBlur = 8 * near.scale;
+      ctx.lineWidth = Math.max(0.7, near.scale * 1.2);
+
+      ctx.beginPath();
+      ctx.moveTo(leftNear.x, near.y);
+      ctx.lineTo(leftFar.x, far.y);
+      ctx.moveTo(rightNear.x, near.y);
+      ctx.lineTo(rightFar.x, far.y);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      const height = Math.max(5, 38 * near.scale);
+      const topY = near.y - height;
+
+      polygon([
+        { x: leftFar.x, y: far.y },
+        { x: rightFar.x, y: far.y },
+        { x: rightNear.x, y: near.y },
+        { x: leftNear.x, y: near.y }
+      ], '#080808', '#201a10', Math.max(0.5, near.scale));
+
+      polygon([
+        { x: leftNear.x, y: topY },
+        { x: rightNear.x, y: topY },
+        { x: rightNear.x, y: near.y },
+        { x: leftNear.x, y: near.y }
+      ], '#080808', '#332817', Math.max(0.5, near.scale));
+
+      polygon([
+        { x: leftNear.x, y: topY },
+        { x: rightNear.x, y: topY },
+        { x: rightFar.x, y: far.y - height * 0.35 },
+        { x: leftFar.x, y: far.y - height * 0.35 }
+      ], COLORS.block, COLORS.blockEdge, Math.max(0.5, near.scale));
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(233,184,63,0.25)';
+      ctx.lineWidth = Math.max(0.5, near.scale);
+      ctx.beginPath();
+      ctx.moveTo(leftNear.x, topY);
+      ctx.lineTo(rightNear.x, topY);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function drawCrystal(crystal, time) {
+    if (crystal.taken) return;
+
+    const p = project(crystal.lane, crystal.z, 23);
+    if (p.y < canvas.height * 0.25 || p.y > canvas.height * 1.15) return;
+
+    const bob = Math.sin(time / 220 + crystal.phase) * 3 * p.scale;
+    const size = Math.max(2, 9 * p.scale);
+
+    ctx.save();
+    ctx.shadowColor = COLORS.glow;
+    ctx.shadowBlur = 18 * p.scale;
+
+    polygon([
+      { x: p.x, y: p.y - size * 1.7 + bob },
+      { x: p.x + size * 0.7, y: p.y - size * 0.35 + bob },
+      { x: p.x, y: p.y + size + bob },
+      { x: p.x - size * 0.7, y: p.y - size * 0.35 + bob }
+    ], '#f7ce58', '#fff1b0', Math.max(0.6, p.scale));
+
+    ctx.restore();
+  }
+
+  function drawPortal(time) {
+    const p = project(routeLane(portalZ), portalZ, 8);
+    if (p.y < canvas.height * 0.24 || p.y > canvas.height * 1.2) return;
+
+    const size = Math.max(3, 20 * p.scale);
+    const pulse = 1 + Math.sin(time / 210) * 0.08;
+
+    ctx.save();
+    ctx.translate(p.x, p.y - size);
+    ctx.scale(pulse, pulse);
+    ctx.shadowColor = COLORS.glow;
+    ctx.shadowBlur = 22 * p.scale;
+    ctx.strokeStyle = COLORS.gold;
+    ctx.lineWidth = Math.max(1.5, 4 * p.scale);
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 0.55, size, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#fff2b0';
+    ctx.lineWidth = Math.max(0.7, 1.5 * p.scale);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 0.33, size * 0.75, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPlayer(time) {
+    const x = canvas.width / 2;
+    const y = canvas.height * 0.79;
+    const radius = Math.max(9, Math.min(canvas.width, canvas.height) * 0.035);
+    const bob = Math.sin(time / 110) * 1.2;
+
+    ctx.save();
+
+    const shadow = ctx.createRadialGradient(
+      x, y + radius * 0.8, 1,
+      x, y + radius * 0.8, radius * 2.4
+    );
+    shadow.addColorStop(0, 'rgba(233,184,63,0.25)');
+    shadow.addColorStop(1, 'rgba(0,0,0,0)');
+
+    ctx.fillStyle = shadow;
+    ctx.beginPath();
+    ctx.ellipse(x, y + radius, radius * 2.4, radius, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const gradient = ctx.createRadialGradient(
+      x - radius * 0.35, y - radius * 0.4 + bob, 1,
+      x, y + bob, radius
+    );
+
+    gradient.addColorStop(0, '#fffde0');
+    gradient.addColorStop(0.4, '#ffdf72');
+    gradient.addColorStop(1, '#9c610e');
+
+    ctx.shadowColor = COLORS.glow;
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y + bob, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255,248,204,0.9)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(x, y + bob, radius * 0.72, Math.PI * 1.08, Math.PI * 1.85);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawHUD() {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillStyle = COLORS.glow;
+    ctx.shadowColor = COLORS.gold;
+    ctx.shadowBlur = 7;
+    ctx.fillText(`البلورات ${collected}/${CRYSTAL_COUNT}`, canvas.width / 2, 26);
+    ctx.restore();
+  }
+
+  function drawOverlay() {
+    if (!paused && !won) return;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = COLORS.glow;
+    ctx.font = 'bold 22px system-ui, sans-serif';
+
+    ctx.fillText(
+      won ? 'اكتملت المرحلة!' : 'اللعبة متوقفة',
+      canvas.width / 2,
+      canvas.height / 2 - 6
+    );
+
+    ctx.fillStyle = COLORS.text;
+    ctx.font = '14px system-ui, sans-serif';
+    ctx.fillText(
+      won ? 'اضغط «المرحلة التالية» للمتابعة' : 'اضغط زر التشغيل للاستئناف',
+      canvas.width / 2,
+      canvas.height / 2 + 25
+    );
+
+    ctx.restore();
+  }
+
+  function drawMessage(time) {
+    if (!message || time > messageUntil || won || paused) return;
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 14px system-ui, sans-serif';
+    ctx.fillStyle = COLORS.glow;
+    ctx.shadowColor = COLORS.gold;
+    ctx.shadowBlur = 8;
+    ctx.fillText(message, canvas.width / 2, 52);
+    ctx.restore();
+  }
+
+  function drawScene(time) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawSky(time);
+
+    /*
+     * Draw distant rows first so nearby objects cover them naturally.
+     */
+    const startZ = Math.max(0, player.z - 2);
+    const endZ = Math.min(worldLength, player.z + 17);
+
+    for (let z = endZ; z >= startZ; z--) {
+      for (let lane = 0; lane < LANES; lane++) {
+        drawTile(lane, z, time);
+      }
+
+      for (const crystal of crystals) {
+        if (crystal.z === z) drawCrystal(crystal, time);
+      }
+
+      if (portalZ === z) drawPortal(time);
+    }
+
+    drawPlayer(time);
+    drawHUD();
+    drawOverlay();
+    drawMessage(time);
+  }
+
+  function playMoveSound() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+
+      if (!audioContext) audioContext = new AudioCtx();
+      if (audioContext.state === 'suspended') audioContext.resume();
+
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 520;
+      gain.gain.setValueAtTime(0.035, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.07);
+
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.07);
+    } catch (_) {
+      // Sound is optional; movement must work even if audio is unavailable.
+    }
+  }
+
+  function checkCollection() {
+    for (const crystal of crystals) {
+      if (
+        !crystal.taken &&
+        crystal.lane === player.lane &&
+        crystal.z === player.z
+      ) {
+        crystal.taken = true;
+        collected++;
+        showMessage('جمعت بلورة ذهبية!');
+      }
+    }
+
+    if (player.z >= portalZ && player.lane === routeLane(portalZ)) {
+      if (collected >= CRYSTAL_COUNT) {
         won = true;
         completedLevels = Math.max(completedLevels, level);
         bestLevel = Math.max(bestLevel, level + 1);
-
         saveProgress();
         showMessage('أحسنت! وصلت إلى البوابة', 5000);
       } else {
+        player.z = Math.max(0, portalZ - 1);
         showMessage('اجمع البلورتين أولًا');
       }
     }
@@ -642,27 +584,47 @@
   function move(direction) {
     if (paused || won) return;
 
-    const delta = DIRECTIONS[direction];
-    if (!delta) return;
+    let nextLane = player.lane;
+    let nextZ = player.z;
 
-    const nx = player.x + delta.x;
-    const ny = player.y + delta.y;
+    switch (direction) {
+      case 'up':
+        nextZ++;
+        break;
+      case 'down':
+        nextZ--;
+        break;
+      case 'left':
+        nextLane--;
+        break;
+      case 'right':
+        nextLane++;
+        break;
+      default:
+        return;
+    }
 
-    if (!inside(nx, ny) || !maze[ny][nx].path) {
+    nextLane = Math.max(0, Math.min(LANES - 1, nextLane));
+    nextZ = Math.max(0, Math.min(portalZ, nextZ));
+
+    if (nextLane === player.lane && nextZ === player.z) return;
+
+    if (!isOpen(nextLane, nextZ)) {
       showMessage('كتلة سوداء تسد الطريق');
       return;
     }
 
-    player.x = nx;
-    player.y = ny;
+    player.lane = nextLane;
+    player.z = nextZ;
     moves++;
 
+    playMoveSound();
     checkCollection();
     updateStats();
   }
 
   function restartLevel() {
-    generateMaze();
+    generateWorld();
     saveProgress();
     updateStats();
   }
@@ -676,7 +638,7 @@
     level++;
     bestLevel = Math.max(bestLevel, level);
     saveProgress();
-    generateMaze();
+    generateWorld();
     showMessage(`بدأت المرحلة ${level}`);
     updateStats();
   }
@@ -689,21 +651,66 @@
     updateStats();
   }
 
-  function loop(time) {
-    if (lastFrame === 0) lastFrame = time;
+  /*
+   * Touch controls:
+   * swipe up/down to move forward/backward,
+   * swipe left/right to change lane.
+   */
+  function getTouchPoint(event) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top
+    };
+  }
 
-    const delta = Math.min(time - lastFrame, 100);
-    lastFrame = time;
+  canvas.style.touchAction = 'none';
 
-    if (!paused && !won) {
-      elapsed += delta;
+  canvas.addEventListener('pointerdown', event => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+    touchStart = {
+      ...getTouchPoint(event),
+      id: event.pointerId,
+      time: performance.now()
+    };
+
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch (_) {}
+  });
+
+  canvas.addEventListener('pointerup', event => {
+    if (!touchStart || touchStart.id !== event.pointerId) return;
+
+    const end = getTouchPoint(event);
+    const dx = end.x - touchStart.x;
+    const dy = end.y - touchStart.y;
+    const distance = Math.hypot(dx, dy);
+
+    if (distance < 22) {
+      /*
+       * A short tap uses the side of the screen for steering.
+       * The middle area moves forward.
+       */
+      const ratio = end.x / Math.max(1, canvas.clientWidth);
+
+      if (ratio < 0.34) move('left');
+      else if (ratio > 0.66) move('right');
+      else move('up');
+    } else if (Math.abs(dx) > Math.abs(dy)) {
+      move(dx < 0 ? 'left' : 'right');
+    } else {
+      move(dy < 0 ? 'up' : 'down');
     }
 
-    drawScene(time);
-    updateStats();
+    touchStart = null;
+    lastTouchMove = performance.now();
+  });
 
-    animationId = requestAnimationFrame(loop);
-  }
+  canvas.addEventListener('pointercancel', () => {
+    touchStart = null;
+  });
 
   document.addEventListener('drder:move', event => {
     const direction = event.detail && event.detail.direction;
@@ -734,14 +741,26 @@
     }
   });
 
+  function loop(time) {
+    if (!lastFrame) lastFrame = time;
+
+    const delta = Math.min(time - lastFrame, 100);
+    lastFrame = time;
+
+    if (!paused && !won) elapsed += delta;
+
+    drawScene(time);
+    updateStats();
+
+    animationId = requestAnimationFrame(loop);
+  }
+
   readSave();
-  generateMaze();
+  generateWorld();
+
   cancelAnimationFrame(animationId);
   animationId = requestAnimationFrame(loop);
 
-  /*
-   * Expose a small inspection interface for later testing.
-   */
   app.getGameState = () => ({
     level,
     moves,
@@ -750,6 +769,8 @@
     won,
     paused,
     bestLevel,
-    completedLevels
+    completedLevels,
+    player: { ...player },
+    worldLength
   });
 })();
