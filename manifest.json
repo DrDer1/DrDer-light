@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "DrDer-light",
-  "short_name": "DrDer-light",
-  "description": "طريق ذهبي لانهائي. اجمع البلورات واعثر على البوابة المضيئة.",
+  "name": "DrDer-Light",
+  "short_name": "DrDer-Light",
+  "description": "متاهة ذهبية ثلاثية الأبعاد بمنظور خلف الكرة. اجمع البلورتين واعثر على البوابة المضيئة.",
   "lang": "ar",
   "dir": "rtl",
   "start_url": "./",
