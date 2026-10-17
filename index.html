@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#080808">
-  <meta name="description" content="DrDer-light — طريق ذهبي لانهائي، اجمع البلورات واعثر على البوابة.">
-  <title>DrDer-light</title>
+  <meta name="description" content="DrDer-Light — متاهة ذهبية ثلاثية الأبعاد. اجمع البلورتين واعثر على البوابة المضيئة.">
+  <title>DrDer-Light</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" type="image/png" href="./192.png">
   <link rel="apple-touch-icon" href="./192.png">
@@ -16,10 +16,10 @@
   <main class="app">
     <header class="header">
       <div class="brand">
-        <img src="./192.png" alt="DrDer-light">
-        <div>
-          <h1>DrDer-light</h1>
-          <p>اجمع البلورات وافتح البوابة</p>
+        <img src="./192.png" alt="DrDer-Light">
+        <div class="brand-text">
+          <h1>DrDer-Light</h1>
+          <p>اجمع البلورتين وافتح البوابة</p>
         </div>
       </div>
 
@@ -34,16 +34,16 @@
         <span class="stat-value" id="levelValue">1</span>
       </div>
       <div class="stat">
-        <span class="stat-label">الحركات</span>
-        <span class="stat-value" id="movesValue">0</span>
-      </div>
-      <div class="stat">
         <span class="stat-label">البلورات</span>
         <span class="stat-value" id="crystalsValue">0/2</span>
       </div>
       <div class="stat">
         <span class="stat-label">الوقت</span>
         <span class="stat-value" id="timeValue">00:00</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">الأفضل</span>
+        <span class="stat-value" id="bestValue">--:--</span>
       </div>
     </section>
 
@@ -53,33 +53,21 @@
       </canvas>
     </section>
 
-    <p class="game-caption">
-      حرّك الكرة الذهبية عبر الطريق، واجمع البلورتين ثم ادخل البوابة المضيئة.
-      يمكنك السحب على اللوحة أو استخدام أزرار الاتجاهات.
+    <p class="game-caption" id="caption">
+      اسحب لأعلى للتقدم · يمينًا ويسارًا لتغيير المسار
     </p>
-
-    <section class="controls" aria-label="أزرار الحركة">
-      <button class="direction-button" id="moveUp"
-        type="button" aria-label="تحرك للأعلى">↑</button>
-      <button class="direction-button" id="moveLeft"
-        type="button" aria-label="تحرك لليسار">←</button>
-      <button class="direction-button" id="moveDown"
-        type="button" aria-label="تحرك للأسفل">↓</button>
-      <button class="direction-button" id="moveRight"
-        type="button" aria-label="تحرك لليمين">→</button>
-    </section>
 
     <section class="actions">
       <button class="action-button" id="restartButton" type="button">
         ↻ إعادة المرحلة
       </button>
-      <button class="action-button" id="nextButton" type="button">
+      <button class="action-button" id="nextButton" type="button" disabled>
         المرحلة التالية ›
       </button>
     </section>
 
     <footer class="footer">
-      DrDer-light · متاهة الظلال الذهبية
+      DrDer-Light · متاهة الظلال الذهبية
     </footer>
   </main>
 
