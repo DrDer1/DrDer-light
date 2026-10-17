@@ -723,4 +723,107 @@
 
     const dx = joystickCurrentX - joystickBaseX;
     const dy = joystickCurrentY - joystickBaseY;
-    const dist = Math.sqrt(dx * dx + dy
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < JOYSTICK_DEADZONE) {
+      moveForward = 0;
+      moveSide = 0;
+      rotateSpeed = 0;
+      return;
+    }
+
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const strength = Math.min(1, dist / JOYSTICK_RADIUS);
+
+    moveForward = -ny * strength;
+    moveSide = nx * strength;
+    
+    // إذا كان السحب أفقياً بشكل ملحوظ، يلتف اللاعب
+    if (Math.abs(dx) > Math.abs(dy) * 1.2) {
+      rotateSpeed = nx * strength;
+    } else {
+      rotateSpeed = 0;
+    }
+  }
+
+  function onPointerUp(e) {
+    if (e.pointerId !== joystickPointerId) return;
+    joystickActive = false;
+    joystickPointerId = null;
+    moveForward = 0;
+    moveSide = 0;
+    rotateSpeed = 0;
+    stopWalkSound();
+  }
+
+  function onKeyDown(e) {
+    const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', a: 'left', d: 'right', w: 'up', s: 'down' };
+    const d = map[e.key];
+    if (d) {
+      e.preventDefault();
+      if (d === 'up') moveForward = 1;
+      else if (d === 'down') moveForward = -1;
+      else if (d === 'left') rotateSpeed = -1;
+      else if (d === 'right') rotateSpeed = 1;
+    }
+    if (e.key === 'Escape' || e.key === ' ') { e.preventDefault(); togglePause(); }
+  }
+
+  function onKeyUp(e) {
+    const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', a: 'left', d: 'right', w: 'up', s: 'down' };
+    const d = map[e.key];
+    if (d) {
+      if (d === 'up' || d === 'down') moveForward = 0;
+      else rotateSpeed = 0;
+    }
+  }
+
+  function frame(time) {
+    animationId = requestAnimationFrame(frame);
+    if (!lastFrame) lastFrame = time;
+    const delta = Math.min(0.1, (time - lastFrame) / 1000);
+    lastFrame = time;
+
+    if (!paused && !won && !dead) {
+      elapsed += delta;
+      updateMovement(delta);
+    }
+
+    render(time);
+  }
+
+  function bindUI() {
+    const rb = $('restartButton'), nb = $('nextButton'), pb = $('pauseButton');
+    if (rb) rb.addEventListener('click', restartLevel);
+    if (nb) nb.addEventListener('click', nextLevel);
+    if (pb) pb.addEventListener('click', togglePause);
+  }
+
+  canvas.style.touchAction = 'none';
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerUp);
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('keyup', onKeyUp);
+  document.addEventListener('drder:restart', restartLevel);
+  document.addEventListener('drder:pause', togglePause);
+  document.addEventListener('drder:next', nextLevel);
+  window.addEventListener('resize', () => syncCanvas());
+
+  loadProgress();
+  generateMaze();
+  bindUI();
+  updateStats();
+  syncCanvas();
+  initAudio();
+  loadAudio();
+
+  cancelAnimationFrame(animationId);
+  animationId = requestAnimationFrame(frame);
+
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
+  }
+})();
