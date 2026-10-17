@@ -1,5 +1,5 @@
 /* DrDer-Light — engine.js
-   متاهة Raycasting، مفاتيح، أبواب، عصا تحكم افتراضية، مراحل لا نهائية، مسارات خادعة، حفر وأشواك.
+   متاهة Raycasting، مفاتيح، أبواب، حفر حقيقية (Floor Casting)، أسهم حمراء خادعة، عصا تحكم.
 */
 (() => {
   'use strict';
@@ -8,13 +8,13 @@
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const SAVE_KEY = 'drder-light-save-v9';
+  const SAVE_KEY = 'drder-light-save-v10';
   const CRYSTAL_COUNT = 2;
   const MAZE_W = 21;
   const MAZE_H = 51;
   const GOLD = '#f4cf63';
   const GOLD_LIGHT = '#fff0a0';
-  const RED = '#ff4444';
+  const RED = '#ff3333';
 
   let level = 1;
   let bestTimes = {};
@@ -34,10 +34,9 @@
   let maze = [];
   let crystalsPos = [];
   let portalPos = { x: 1.5, y: 1.5 };
-  let spikes = [];
-  let decoySigns = [];
+  let pits = []; // حفر حقيقية
+  let decoySigns = []; // أسهم حمراء خادعة
 
-  // Virtual joystick
   let joystickActive = false;
   let joystickBaseX = 0;
   let joystickBaseY = 0;
@@ -47,12 +46,10 @@
   const JOYSTICK_RADIUS = 60;
   const JOYSTICK_DEADZONE = 10;
 
-  // Movement state
   let moveForward = 0;
   let moveSide = 0;
   let rotateSpeed = 0;
 
-  // Audio
   let audioCtx = null;
   let walkAudio = null;
   let doorAudio = null;
@@ -63,7 +60,7 @@
 
   function generateMaze() {
     maze = Array.from({ length: MAZE_H }, () => Array(MAZE_W).fill(1));
-    spikes = [];
+    pits = [];
     decoySigns = [];
 
     const stack = [{ x: 1, y: 1 }];
@@ -106,17 +103,17 @@
       }
     }
 
-    // إضافة حفر الأشواك
-    for (let i = 0; i < 12; i++) {
-      const sx = 3 + Math.floor(Math.random() * (MAZE_W - 6));
-      const sy = 5 + Math.floor(Math.random() * (MAZE_H - 10));
-      if (maze[sy][sx] === 0 && !(sx < 4 && sy < 4)) {
-        spikes.push({ x: sx + 0.5, y: sy + 0.5 });
+    // حفر حقيقية (Pits) — ليست مجرد رسم، بل تسبب الموت
+    for (let i = 0; i < 15; i++) {
+      const px = 3 + Math.floor(Math.random() * (MAZE_W - 6));
+      const py = 5 + Math.floor(Math.random() * (MAZE_H - 10));
+      if (maze[py][px] === 0 && !(px < 5 && py < 5)) {
+        pits.push({ x: px + 0.5, y: py + 0.5 });
       }
     }
 
-    // إضافة أسهم خادعة
-    for (let i = 0; i < 10; i++) {
+    // أسهم خادعة باللون الأحمر
+    for (let i = 0; i < 12; i++) {
       const sx = 3 + Math.floor(Math.random() * (MAZE_W - 6));
       const sy = 5 + Math.floor(Math.random() * (MAZE_H - 10));
       if (maze[sy][sx] === 0) {
@@ -239,8 +236,8 @@
 
   const sound = {
     crystal: () => { tone(880, 0.10, 0.05); setTimeout(() => tone(1320, 0.14, 0.04), 70); },
-    win: () => { tone(660, 0.14, 0.06); setTimeout(() => tone(990, 0.14, 0.06), 90); setTimeout(() => tone(1320, 0.22, 0.055), 200); },
-    block: () => tone(180, 0.08, 0.03)
+    win: () => { tone(660, 0.14, 0.06); setTimeout(() => tone(990, 0.14, 0.06), 90); setTimeout(() => tone(1320, 0.22, 0.055), 200); }
+    // تم إزالة صوت الاصطدام المزعج
   };
 
   function syncCanvas() {
@@ -334,9 +331,9 @@
       }
     }
 
-    // رسم الحفر (الأشواك)
-    spikes.forEach(s => {
-      const dx = s.x - player.x, dy = s.y - player.y;
+    // رسم الحفر الحقيقية (Pits) على الأرضية — تبدو كعمق أسود
+    pits.forEach(pit => {
+      const dx = pit.x - player.x, dy = pit.y - player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       let diff = Math.atan2(dy, dx) - player.angle;
       while (diff > Math.PI) diff -= Math.PI * 2;
@@ -345,19 +342,28 @@
       if (Math.abs(diff) < fov / 2 && dist > 0.2) {
         const screenX = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
         if (screenX >= 0 && screenX <= w) {
-          const size = Math.max(4, 25 / dist);
-          const yPos = h / 2 + (h / dist) * 0.15; 
+          // حجم الحفرة بناءً على المسافة
+          const size = Math.max(8, 60 / dist);
+          const yPos = h / 2 + (h / dist) * 0.1;
+          
+          // رسم الحفرة كبيضاوية سوداء عميقة
           ctx.save();
-          ctx.fillStyle = '#111';
+          const pitGrad = ctx.createRadialGradient(screenX, yPos, 2, screenX, yPos, size);
+          pitGrad.addColorStop(0, '#000000');
+          pitGrad.addColorStop(0.7, '#050505');
+          pitGrad.addColorStop(1, '#111111');
+          ctx.fillStyle = pitGrad;
           ctx.beginPath();
-          ctx.ellipse(screenX, yPos, size * 1.5, size * 0.5, 0, 0, Math.PI * 2);
+          ctx.ellipse(screenX, yPos, size * 1.2, size * 0.5, 0, 0, Math.PI * 2);
           ctx.fill();
-          ctx.fillStyle = '#555';
-          for (let i = -1; i <= 1; i++) {
+          
+          // أشواك حمراء داخل الحفرة (لتبدو خطيرة)
+          ctx.fillStyle = '#661111';
+          for (let s = -1; s <= 1; s++) {
             ctx.beginPath();
-            ctx.moveTo(screenX + i * size * 0.6, yPos);
-            ctx.lineTo(screenX + i * size * 0.3, yPos - size);
-            ctx.lineTo(screenX + i * size * 0.6 + size * 0.2, yPos);
+            ctx.moveTo(screenX + s * size * 0.4, yPos);
+            ctx.lineTo(screenX + s * size * 0.2, yPos - size * 0.6);
+            ctx.lineTo(screenX + s * size * 0.6, yPos);
             ctx.fill();
           }
           ctx.restore();
@@ -365,7 +371,7 @@
       }
     });
 
-    // رسم الأسهم الخادعة
+    // رسم الأسهم الخادعة باللون الأحمر
     decoySigns.forEach(s => {
       const dx = s.x - player.x, dy = s.y - player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -376,12 +382,15 @@
       if (Math.abs(diff) < fov / 2 && dist > 0.2) {
         const screenX = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
         if (screenX >= 0 && screenX <= w) {
-          const size = Math.max(5, 35 / dist);
+          const size = Math.max(6, 40 / dist);
           const yPos = h / 2 - size * 0.5;
           ctx.save();
           ctx.translate(screenX, yPos);
           ctx.rotate(s.angle - player.angle);
-          ctx.fillStyle = 'rgba(233, 184, 63, 0.4)';
+          // سهم أحمر خادع
+          ctx.fillStyle = 'rgba(255, 51, 51, 0.7)';
+          ctx.shadowColor = RED;
+          ctx.shadowBlur = 10;
           ctx.beginPath();
           ctx.moveTo(0, -size);
           ctx.lineTo(size * 0.6, 0);
@@ -625,10 +634,10 @@
         moves++;
         checkCollect();
         checkWin();
-        checkSpikes();
+        checkPits();
         startWalkSound();
       } else {
-        sound.block();
+        // تمت إزالة الصوت المزعج عند الاصطدام
         stopWalkSound();
       }
     } else {
@@ -636,10 +645,10 @@
     }
   }
 
-  function checkSpikes() {
+  function checkPits() {
     if (dead) return;
-    spikes.forEach(s => {
-      const dx = s.x - player.x, dy = s.y - player.y;
+    pits.forEach(p => {
+      const dx = p.x - player.x, dy = p.y - player.y;
       if (Math.sqrt(dx * dx + dy * dy) < 0.5) {
         dead = true;
         stopWalkSound();
@@ -707,7 +716,6 @@
     joystickActive = true;
     joystickPointerId = e.pointerId;
     
-    // تعيين قاعدة عصا التحكم أسفل إصبع اللاعب مباشرة
     joystickBaseX = e.clientX;
     joystickBaseY = e.clientY;
     joystickCurrentX = e.clientX;
@@ -739,7 +747,6 @@
     moveForward = -ny * strength;
     moveSide = nx * strength;
     
-    // إذا كان السحب أفقياً بشكل ملحوظ، يلتف اللاعب
     if (Math.abs(dx) > Math.abs(dy) * 1.2) {
       rotateSpeed = nx * strength;
     } else {
