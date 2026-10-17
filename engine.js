@@ -1,6 +1,6 @@
 /* DrDer-Light — engine.js
-   متاهة حقيقية بـ Raycasting (Wolfenstein-style)
-   جدران سوداء واضحة، منظور أول-شخص، توليد مضمون الحل.
+   متاهة واقعية بمنظور خلف الكرة.
+   توليد إجرائي مضمون الحل، جدران سوداء واضحة، مسار ذهبي متعرج.
 */
 (() => {
   'use strict';
@@ -9,18 +9,14 @@
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  /* ============ ثوابت ============ */
-  const SAVE_KEY = 'drder-light-save-v3';
+  const SAVE_KEY = 'drder-light-save-v4';
+  const LANES = 7;
   const CRYSTAL_COUNT = 2;
-
-  // أبعاد المتاهة (عرض 7 مسارات كما طلبت + جدران محيطة)
-  const MAZE_W = 15; // 7 مسارات + جدران + فجوات
-  const MAZE_H = 60; // طول المتاهة (يزيد مع المرحلة)
+  const MOVE_COOLDOWN = 110;
 
   const GOLD = '#f4cf63';
   const GOLD_LIGHT = '#fff0a0';
 
-  /* ============ حالة اللعبة ============ */
   let level = 1;
   let bestTimes = {};
   let moves = 0;
@@ -28,114 +24,92 @@
   let elapsed = 0;
   let paused = false;
   let won = false;
-  let showSuccessScreen = false;
+  let success = false;
   let message = '';
   let messageUntil = 0;
   let animationId = 0;
   let lastFrame = 0;
+  let lastTick = 0;
+  let lastMoveTime = 0;
 
-  // اللاعب (إحداثيات حقيقية في المتاهة)
-  let player = { x: 1.5, y: 1.5, angle: 0 };
-  let visualX = 1.5;
-  let visualY = 1.5;
-  let visualAngle = 0;
-
-  // خريطة المتاهة (0 = ممر، 1 = جدار)
-  let maze = [];
-
-  // عناصر
-  let crystalPositions = [];
-  let portalPos = { x: 1, y: 1 };
-
+  let player = { lane: 3, row: 0, vLane: 3, vRow: 0 };
+  let worldLength = 45;
+  let map = [];
+  let crystalsPos = [];
+  let portal = { row: 0, lane: 3 };
   let pointerStart = null;
   let audioCtx = null;
 
-  /* ============ توليد المتاهة ============ */
-  function generateMaze() {
-    // 1) ابدأ بكل الخلايا جدراناً
-    maze = Array.from({ length: MAZE_H }, () =>
-      Array(MAZE_W).fill(1)
-    );
+  const $ = id => document.getElementById(id);
 
-    // 2) Recursive Backtracking (DFS) — مضمون الحل
-    const stack = [{ x: 1, y: 1 }];
-    maze[1][1] = 0;
-
-    const dirs = [
-      { dx: 0, dy: -2 }, { dx: 0, dy: 2 },
-      { dx: -2, dy: 0 }, { dx: 2, dy: 0 }
-    ];
-
-    while (stack.length) {
-      const cur = stack[stack.length - 1];
-      const options = dirs
-        .map(d => ({ x: cur.x + d.dx, y: cur.y + d.dy }))
-        .filter(p =>
-          p.x > 0 && p.x < MAZE_W - 1 &&
-          p.y > 0 && p.y < MAZE_H - 1 &&
-          maze[p.y][p.x] === 1
-        );
-
-      if (options.length === 0) {
-        stack.pop();
-        continue;
-      }
-
-      const next = options[Math.floor(Math.random() * options.length)];
-      // افتح الجدار بين الخليتين
-      maze[(cur.y + next.y) / 2][(cur.x + next.x) / 2] = 0;
-      maze[next.y][next.x] = 0;
-      stack.push(next);
-    }
-
-    // 3) تأكد من وجود ممر أفقي عريض (7 مسارات) في بعض الصفوف
-    //    ليتنقل اللاعب بحرية
-    for (let y = 3; y < MAZE_H - 3; y += 6) {
-      for (let x = 1; x < MAZE_W - 1; x++) {
-        if (Math.random() > 0.3) maze[y][x] = 0;
-      }
-    }
-
-    // 4) نقطة البداية
-    player = { x: 1.5, y: 1.5, angle: 0 };
-    visualX = 1.5;
-    visualY = 1.5;
-    visualAngle = 0;
-    maze[1][1] = 0;
-
-    // 5) البوابة (آخر المتاهة)
-    portalPos = { x: MAZE_W - 2.5, y: MAZE_H - 2.5 };
-    maze[MAZE_H - 2][MAZE_W - 2] = 0;
-
-    // 6) البلورات على ممرات مضمونة
-    crystalPositions = [];
-    const used = new Set(['1,1']);
-
-    for (let i = 0; i < CRYSTAL_COUNT; i++) {
-      let attempts = 0;
-      while (attempts < 200) {
-        const cx = 2 + Math.floor(Math.random() * (MAZE_W - 4));
-        const cy = 5 + Math.floor(Math.random() * (MAZE_H - 15));
-        const key = cx + ',' + cy;
-        if (maze[cy][cx] === 0 && !used.has(key)) {
-          used.add(key);
-          crystalPositions.push({
-            x: cx + 0.5, y: cy + 0.5,
-            collected: false
-          });
-          break;
-        }
-        attempts++;
-      }
-    }
+  function makeRng(seed) {
+    let s = (seed >>> 0) || 1;
+    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
   }
 
-  /* ============ حفظ / تحميل ============ */
+  function generateWorld() {
+    worldLength = Math.min(180, 45 + level * 3);
+    const rng = makeRng(level * 977 + 12345);
+
+    map = Array.from({ length: worldLength }, () => Array(LANES).fill(1));
+
+    let lane = 3;
+    const path = [];
+    map[0][3] = 0;
+    path.push({ lane: 3, row: 0 });
+
+    for (let row = 1; row < worldLength; row++) {
+      const shift = rng();
+      if (shift < 0.22 && lane > 1) lane--;
+      else if (shift < 0.44 && lane < LANES - 2) lane++;
+      map[row][lane] = 0;
+      path.push({ lane, row });
+    }
+
+    for (let row = 1; row < worldLength - 1; row++) {
+      const mainLane = path[row].lane;
+      for (let l = 1; l < LANES - 1; l++) {
+        if (l === mainLane) continue;
+        if (rng() > 0.55) map[row][l] = 0;
+      }
+      const prev = path[row - 1].lane;
+      if (prev !== mainLane) {
+        const minL = Math.min(prev, mainLane);
+        const maxL = Math.max(prev, mainLane);
+        for (let l = minL; l <= maxL; l++) map[row][l] = 0;
+      }
+    }
+
+    map[0][3] = 0;
+    map[1][3] = 0;
+
+    const portalRow = worldLength - 1;
+    const portalLane = path[portalRow].lane;
+    portal = { row: portalRow, lane: portalLane };
+    map[portalRow][portalLane] = 0;
+    map[portalRow - 1][portalLane] = 0;
+
+    crystalsPos = [];
+    const z1 = Math.max(6, Math.floor(worldLength * 0.30));
+    const z2 = Math.max(z1 + 8, Math.floor(worldLength * 0.68));
+    [z1, z2].forEach(z => {
+      const l = path[z].lane;
+      map[z][l] = 0;
+      crystalsPos.push({ lane: l, row: z, collected: false });
+    });
+
+    player = { lane: 3, row: 0, vLane: 3, vRow: 0 };
+  }
+
+  function isOpen(lane, row) {
+    if (lane < 0 || lane >= LANES) return false;
+    if (row < 0 || row >= worldLength) return false;
+    return map[row][lane] === 0;
+  }
+
   function saveProgress() {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({
-        level, bestTimes, savedAt: Date.now()
-      }));
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ level, bestTimes, savedAt: Date.now() }));
     } catch (_) {}
   }
 
@@ -146,9 +120,6 @@
       if (s.bestTimes && typeof s.bestTimes === 'object') bestTimes = s.bestTimes;
     } catch (_) { level = 1; bestTimes = {}; }
   }
-
-  /* ============ UI ============ */
-  const $ = id => document.getElementById(id);
 
   function formatTime(sec) {
     const t = Math.max(0, Math.floor(sec));
@@ -174,12 +145,11 @@
     if (pb) pb.textContent = paused ? '▶' : 'Ⅱ';
   }
 
-  function say(text, duration = 1600) {
+  function say(text, duration = 1500) {
     message = text;
     messageUntil = performance.now() + duration;
   }
 
-  /* ============ صوت ============ */
   function tone(freq, dur, vol) {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -205,171 +175,198 @@
     block: () => tone(180, 0.08, 0.03)
   };
 
-  /* ============ Raycasting Rendering ============ */
   function syncCanvas() {
     const rect = canvas.getBoundingClientRect();
     const w = Math.max(1, rect.width);
     const h = Math.max(1, rect.height);
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(w * ratio);
-    canvas.height = Math.round(h * ratio);
+    const tw = Math.round(w * ratio);
+    const th = Math.round(h * ratio);
+    if (canvas.width !== tw || canvas.height !== th) {
+      canvas.width = tw;
+      canvas.height = th;
+    }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     return { w, h };
   }
 
-  function render(time) {
-    const dims = syncCanvas();
+  function project(lane, row, lift, dims) {
     const { w, h } = dims;
-
-    // خلفية (سقف وأرضية)
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.5);
-    skyGrad.addColorStop(0, '#030303');
-    skyGrad.addColorStop(1, '#0a0805');
-    ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, w, h * 0.5);
-
-    const floorGrad = ctx.createLinearGradient(0, h * 0.5, 0, h);
-    floorGrad.addColorStop(0, '#0a0805');
-    floorGrad.addColorStop(1, '#030303');
-    ctx.fillStyle = floorGrad;
-    ctx.fillRect(0, h * 0.5, w, h * 0.5);
-
-    // Raycasting
-    const fov = Math.PI / 3; // 60 درجة
-    const numRays = Math.min(w, 320); // تقليل العدد للأداء
-    const rayStep = w / numRays;
-
-    const px = visualX;
-    const py = visualY;
-    const pa = visualAngle;
-
-    for (let i = 0; i < numRays; i++) {
-      const screenX = i * rayStep;
-      const rayAngle = pa - fov / 2 + (i / numRays) * fov;
-
-      // DDA raycast
-      const sin = Math.sin(rayAngle);
-      const cos = Math.cos(rayAngle);
-
-      let rayX = px;
-      let rayY = py;
-      let hit = false;
-      let side = 0;
-      let distance = 0;
-
-      const stepSize = 0.05;
-      const maxDist = 20;
-
-      while (!hit && distance < maxDist) {
-        rayX += cos * stepSize;
-        rayY += sin * stepSize;
-        distance += stepSize;
-
-        const mapX = Math.floor(rayX);
-        const mapY = Math.floor(rayY);
-
-        if (mapX < 0 || mapX >= MAZE_W || mapY < 0 || mapY >= MAZE_H) {
-          hit = true;
-          break;
-        }
-
-        if (maze[mapY][mapX] === 1) {
-          hit = true;
-          // تحديد الاتجاه (أفقي/عمودي) للتظليل
-          side = Math.abs(cos) > Math.abs(sin) ? 0 : 1;
-        }
-      }
-
-      if (!hit) continue;
-
-      // تصحيح fisheye
-      const correctedDist = distance * Math.cos(rayAngle - pa);
-      const wallHeight = (h / correctedDist) * 0.8;
-
-      // لون الجدار: أسود مع تظليل حسب الاتجاه
-      const shade = side === 0 ? '#0a0a0a' : '#050505';
-      ctx.fillStyle = shade;
-
-      const wallTop = (h - wallHeight) / 2;
-      ctx.fillRect(screenX, wallTop, rayStep + 1, wallHeight);
-
-      // خط ذهبي رفيع على الحافة العلوية للجدار (لإبراز الشكل)
-      ctx.fillStyle = 'rgba(233,184,63,0.15)';
-      ctx.fillRect(screenX, wallTop, rayStep + 1, Math.max(1, wallHeight * 0.02));
-    }
-
-    // رسم البلورات (بسيط: دوائر ذهبية في منتصف الشاشة إذا كانت قريبة)
-    crystalPositions.forEach(c => {
-      if (c.collected) return;
-      const dx = c.x - px;
-      const dy = c.y - py;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > 12) return;
-
-      const angleToCrystal = Math.atan2(dy, dx);
-      let diff = angleToCrystal - pa;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-
-      if (Math.abs(diff) < fov / 2) {
-        const screenX = w / 2 + (diff / (fov / 2)) * (w / 2);
-        const size = Math.max(4, 40 / dist);
-        const screenY = h / 2;
-
-        ctx.save();
-        ctx.shadowColor = GOLD;
-        ctx.shadowBlur = 15;
-        ctx.fillStyle = GOLD;
-        ctx.beginPath();
-        ctx.arc(screenX, screenY, size, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-    });
-
-    // رسم البوابة
-    if (portalPos) {
-      const dx = portalPos.x - px;
-      const dy = portalPos.y - py;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 15) {
-        const angleToPortal = Math.atan2(dy, dx);
-        let diff = angleToPortal - pa;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-
-        if (Math.abs(diff) < fov / 2) {
-          const screenX = w / 2 + (diff / (fov / 2)) * (w / 2);
-          const size = Math.max(6, 60 / dist);
-
-          ctx.save();
-          ctx.shadowColor = GOLD;
-          ctx.shadowBlur = 20;
-          ctx.strokeStyle = GOLD;
-          ctx.lineWidth = Math.max(2, 4 / dist * 5);
-          ctx.beginPath();
-          ctx.ellipse(screenX, h / 2, size * 0.5, size, 0, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.restore();
-        }
-      }
-    }
-
-    // HUD
-    drawHUD(w, h);
-    drawMessage(w, h);
-    drawOverlay(w, h);
+    const horizon = h * 0.28;
+    const dist = row - player.vRow;
+    const clamped = Math.max(-1, dist);
+    const persp = 1 / (1 + Math.max(0, clamped) * 0.10);
+    const scale = Math.max(0.06, Math.min(2.2, persp));
+    const laneW = w * 0.155 * scale;
+    const x = w * 0.5 + (lane - player.vLane) * laneW;
+    const y = horizon + h * 0.82 * scale - (lift || 0) * scale;
+    return { x, y, scale, laneW, horizon };
   }
 
-  function drawHUD(w, h) {
+  function poly(pts, fill, stroke, lw) {
+    if (!pts || pts.length < 3) return;
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); }
+  }
+
+  function drawSky(w, h) {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#030202');
+    g.addColorStop(0.35, '#0d0a05');
+    g.addColorStop(0.7, '#060504');
+    g.addColorStop(1, '#020202');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    const horizon = h * 0.28;
+    const glow = ctx.createRadialGradient(w * 0.5, horizon, 1, w * 0.5, horizon, w * 0.65);
+    glow.addColorStop(0, 'rgba(230,175,45,0.16)');
+    glow.addColorStop(0.5, 'rgba(140,95,20,0.05)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h * 0.75);
+  }
+
+  function drawTile(lane, row, dims) {
+    const near = project(lane, row, 0, dims);
+    const far = project(lane, row + 1, 0, dims);
+    const { h } = dims;
+    if (near.y < h * 0.18 || far.y > h * 1.6) return;
+
+    const ln = near.x - near.laneW * 0.5;
+    const rn = near.x + near.laneW * 0.5;
+    const lf = far.x - far.laneW * 0.5;
+    const rf = far.x + far.laneW * 0.5;
+
+    const open = isOpen(lane, row);
+
+    if (open) {
+      const fill = (lane + row) % 2 === 0 ? '#1c1709' : '#141009';
+      poly([[lf, far.y], [rf, far.y], [rn, near.y], [ln, near.y]], fill, 'rgba(220,175,60,0.30)', 1);
+      ctx.strokeStyle = 'rgba(255,220,130,0.45)';
+      ctx.lineWidth = Math.max(0.5, near.scale * 0.9);
+      ctx.beginPath();
+      ctx.moveTo(ln, near.y); ctx.lineTo(lf, far.y);
+      ctx.moveTo(rn, near.y); ctx.lineTo(rf, far.y);
+      ctx.stroke();
+    } else {
+      const depth = Math.max(8, near.scale * h * 0.10);
+      const farDepth = depth * (far.scale / Math.max(0.05, near.scale));
+      const topY = near.y - depth;
+      const farTopY = far.y - farDepth;
+
+      poly([[lf, farTopY], [rf, farTopY], [rn, topY], [ln, topY]], '#0f0d08', 'rgba(255,210,100,0.42)', 1.1);
+      poly([[ln, topY], [rn, topY], [rn, near.y], [ln, near.y]], '#020202', 'rgba(200,160,60,0.55)', 1);
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,220,120,0.55)';
+      ctx.lineWidth = Math.max(0.7, near.scale * 1.2);
+      ctx.beginPath();
+      ctx.moveTo(ln, topY); ctx.lineTo(rn, topY);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function drawCrystal(c, dims, time) {
+    if (c.collected) return;
+    const p = project(c.lane, c.row, dims.h * 0.06, dims);
+    if (p.y < dims.h * 0.18 || p.y > dims.h * 1.15) return;
+    if (p.x < -dims.w * 0.15 || p.x > dims.w * 1.15) return;
+
+    const bob = Math.sin(time / 220) * 3 * p.scale;
+    const size = Math.max(4, Math.min(24, dims.w * 0.028 * p.scale * 4));
+
     ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.font = '600 15px sans-serif';
+    ctx.translate(p.x, p.y + bob);
     ctx.shadowColor = GOLD;
-    ctx.shadowBlur = 8;
-    ctx.fillStyle = GOLD_LIGHT;
-    ctx.fillText('البلورات ' + crystals + '/' + CRYSTAL_COUNT, w * 0.5, 22);
+    ctx.shadowBlur = size * 1.8;
+    poly([
+      [0, -size * 1.3],
+      [size * 0.62, -size * 0.15],
+      [0, size * 0.95],
+      [-size * 0.62, -size * 0.15]
+    ], GOLD, GOLD_LIGHT, 1.2);
+    poly([
+      [0, -size * 1.3],
+      [size * 0.62, -size * 0.15],
+      [0, size * 0.15]
+    ], '#ffe98a', null, 0);
+    ctx.restore();
+  }
+
+  function drawPortal(dims, time) {
+    const p = project(portal.lane, portal.row, 0, dims);
+    if (p.y < dims.h * 0.18 || p.y > dims.h * 1.25) return;
+    if (p.x < -dims.w * 0.3 || p.x > dims.w * 1.3) return;
+
+    const width = Math.max(6, p.laneW * 0.75);
+    const height = width * 1.55;
+    const pulse = 1 + Math.sin(time / 210) * 0.06;
+
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.scale(pulse, pulse);
+    ctx.shadowColor = GOLD;
+    ctx.shadowBlur = 22 * p.scale;
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = Math.max(1.2, 3 * p.scale);
+    ctx.beginPath();
+    ctx.moveTo(-width * 0.5, 0);
+    ctx.lineTo(-width * 0.5, -height);
+    ctx.quadraticCurveTo(0, -height * 1.22, width * 0.5, -height);
+    ctx.lineTo(width * 0.5, 0);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,226,130,0.7)';
+    ctx.lineWidth = Math.max(0.6, p.scale);
+    ctx.beginPath();
+    ctx.moveTo(-width * 0.34, 0);
+    ctx.lineTo(-width * 0.34, -height * 0.94);
+    ctx.quadraticCurveTo(0, -height * 1.11, width * 0.34, -height * 0.94);
+    ctx.lineTo(width * 0.34, 0);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPlayer(w, h) {
+    const x = w * 0.5;
+    const y = h * 0.80;
+    const r = Math.max(10, Math.min(w, h) * 0.04);
+
+    const glow = ctx.createRadialGradient(x, y, 1, x, y, r * 4);
+    glow.addColorStop(0, 'rgba(255,226,120,0.55)');
+    glow.addColorStop(0.3, 'rgba(241,185,55,0.22)');
+    glow.addColorStop(1, 'rgba(255,190,40,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + r * 1.15, r * 1.2, r * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const ball = ctx.createRadialGradient(x - r * 0.32, y - r * 0.38, r * 0.05, x, y, r);
+    ball.addColorStop(0, '#fffbd6');
+    ball.addColorStop(0.28, '#ffe88b');
+    ball.addColorStop(0.64, '#e7ae32');
+    ball.addColorStop(1, '#8b5812');
+
+    ctx.save();
+    ctx.shadowColor = GOLD;
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = ball;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,245,187,0.9)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -378,24 +375,26 @@
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 14px system-ui, sans-serif';
     const width = Math.min(w - 40, 320);
+    const x = w * 0.5;
+    const y = h * 0.66;
     ctx.fillStyle = 'rgba(8,7,4,0.9)';
     ctx.strokeStyle = 'rgba(220,175,67,0.65)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(w/2 - width/2, h*0.66 - 20, width, 40, 10);
-    else ctx.rect(w/2 - width/2, h*0.66 - 20, width, 40);
+    if (ctx.roundRect) ctx.roundRect(x - width / 2, y - 20, width, 40, 10);
+    else ctx.rect(x - width / 2, y - 20, width, 40);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = GOLD_LIGHT;
-    ctx.fillText(message, w/2, h*0.66);
+    ctx.fillText(message, x, y);
     ctx.restore();
   }
 
   function drawOverlay(w, h) {
     if (paused) {
-      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillStyle = 'rgba(0,0,0,0.68)';
       ctx.fillRect(0, 0, w, h);
       ctx.save();
       ctx.textAlign = 'center';
@@ -403,16 +402,16 @@
       ctx.shadowColor = GOLD;
       ctx.shadowBlur = 14;
       ctx.fillStyle = GOLD_LIGHT;
-      ctx.font = 'bold 24px sans-serif';
-      ctx.fillText('اللعبة متوقفة', w/2, h*0.48);
-      ctx.font = '14px sans-serif';
+      ctx.font = 'bold 24px system-ui, sans-serif';
+      ctx.fillText('اللعبة متوقفة', w * 0.5, h * 0.48);
+      ctx.font = '14px system-ui, sans-serif';
       ctx.fillStyle = '#fff4cf';
-      ctx.fillText('اضغط زر التشغيل للاستئناف', w/2, h*0.55);
+      ctx.fillText('اضغط زر التشغيل للاستئناف', w * 0.5, h * 0.55);
       ctx.restore();
     }
 
-    if (showSuccessScreen) {
-      ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    if (success) {
+      ctx.fillStyle = 'rgba(0,0,0,0.82)';
       ctx.fillRect(0, 0, w, h);
       ctx.save();
       ctx.textAlign = 'center';
@@ -420,75 +419,58 @@
       ctx.shadowColor = GOLD;
       ctx.shadowBlur = 20;
       ctx.fillStyle = GOLD_LIGHT;
-      ctx.font = 'bold 28px sans-serif';
-      ctx.fillText('اكتملت المرحلة!', w/2, h*0.30);
+      ctx.font = 'bold 28px system-ui, sans-serif';
+      ctx.fillText('اكتملت المرحلة!', w * 0.5, h * 0.30);
       ctx.shadowBlur = 8;
-      ctx.font = 'bold 16px sans-serif';
+      ctx.font = 'bold 16px system-ui, sans-serif';
       ctx.fillStyle = '#fff4cf';
-      ctx.fillText('المرحلة ' + level, w/2, h*0.42);
-      ctx.font = '15px sans-serif';
-      ctx.fillText('الوقت: ' + formatTime(elapsed), w/2, h*0.50);
-      ctx.font = '14px sans-serif';
-      ctx.fillText('اضغط «المرحلة التالية» للمتابعة', w/2, h*0.66);
+      ctx.fillText('المرحلة ' + level, w * 0.5, h * 0.42);
+      ctx.font = '15px system-ui, sans-serif';
+      ctx.fillText('الوقت: ' + formatTime(elapsed), w * 0.5, h * 0.50);
+      const best = bestTimes[String(level)];
+      if (best && Math.abs(best - elapsed) < 0.5) {
+        ctx.fillStyle = GOLD_LIGHT;
+        ctx.font = 'bold 14px system-ui, sans-serif';
+        ctx.fillText('★ رقم قياسي جديد!', w * 0.5, h * 0.57);
+      }
+      ctx.fillStyle = '#fff4cf';
+      ctx.font = '14px system-ui, sans-serif';
+      ctx.fillText('اضغط «المرحلة التالية» للمتابعة', w * 0.5, h * 0.66);
       ctx.restore();
     }
   }
 
-  /* ============ منطق الحركة ============ */
-  function tryMove(newX, newY) {
-    const margin = 0.25;
-    if (newX < margin || newX > MAZE_W - margin ||
-        newY < margin || newY > MAZE_H - margin) return false;
-    const mapX = Math.floor(newX);
-    const mapY = Math.floor(newY);
-    if (mapX < 0 || mapX >= MAZE_W || mapY < 0 || mapY >= MAZE_H) return false;
-    return maze[mapY][mapX] === 0;
-  }
+  function render(time) {
+    const dims = syncCanvas();
+    const { w, h } = dims;
 
-  function move(direction) {
-    if (paused || won) return;
+    ctx.clearRect(0, 0, w, h);
+    drawSky(w, h);
 
-    const speed = 0.35;
-    let dx = 0, dy = 0;
+    const startRow = Math.floor(player.vRow + 22);
+    const endRow = Math.max(0, Math.floor(player.vRow - 2));
 
-    if (direction === 'up') {
-      dx = Math.cos(visualAngle) * speed;
-      dy = Math.sin(visualAngle) * speed;
-    } else if (direction === 'down') {
-      dx = -Math.cos(visualAngle) * speed;
-      dy = -Math.sin(visualAngle) * speed;
-    } else if (direction === 'left') {
-      visualAngle -= 0.15;
-      return;
-    } else if (direction === 'right') {
-      visualAngle += 0.15;
-      return;
+    for (let row = startRow; row >= endRow; row--) {
+      for (let lane = 0; lane < LANES; lane++) {
+        drawTile(lane, row, dims);
+      }
+      crystalsPos.forEach(c => { if (c.row === row) drawCrystal(c, dims, time); });
+      if (row === portal.row) drawPortal(dims, time);
     }
 
-    const newX = visualX + dx;
-    const newY = visualY + dy;
+    crystalsPos.forEach(c => {
+      if (c.row < endRow || c.row > startRow) drawCrystal(c, dims, time);
+    });
+    if (portal.row < endRow || portal.row > startRow) drawPortal(dims, time);
 
-    if (tryMove(newX, newY)) {
-      visualX = newX;
-      visualY = newY;
-      player.x = newX;
-      player.y = newY;
-      moves++;
-      sound.move();
-      checkCollect();
-      checkWin();
-      updateStats();
-    } else {
-      sound.block();
-    }
+    drawPlayer(w, h);
+    drawMessage(w, h);
+    drawOverlay(w, h);
   }
 
-  function checkCollect() {
-    crystalPositions.forEach(c => {
-      if (c.collected) return;
-      const dx = c.x - player.x;
-      const dy = c.y - player.y;
-      if (Math.sqrt(dx*dx + dy*dy) < 0.8) {
+  function collectCrystals() {
+    crystalsPos.forEach(c => {
+      if (!c.collected && c.row === player.row && c.lane === player.lane) {
         c.collected = true;
         crystals++;
         sound.crystal();
@@ -499,18 +481,20 @@
   }
 
   function checkWin() {
-    if (crystals < CRYSTAL_COUNT) return;
-    const dx = portalPos.x - player.x;
-    const dy = portalPos.y - player.y;
-    if (Math.sqrt(dx*dx + dy*dy) < 1.2) {
-      finishLevel();
+    if (player.row === portal.row && player.lane === portal.lane) {
+      if (crystals >= CRYSTAL_COUNT) {
+        finishLevel();
+      } else {
+        player.row = Math.max(0, portal.row - 1);
+        say('اجمع البلورتين أولًا');
+      }
     }
   }
 
   function finishLevel() {
     won = true;
     paused = false;
-    showSuccessScreen = true;
+    success = true;
     const key = String(level);
     const prev = bestTimes[key];
     if (!prev || elapsed < prev) bestTimes[key] = Math.round(elapsed * 10) / 10;
@@ -519,20 +503,51 @@
     updateStats();
   }
 
-  /* ============ إعادة / تالي / إيقاف ============ */
+  function move(direction) {
+    if (paused || won) return;
+    const now = performance.now();
+    if (now - lastMoveTime < MOVE_COOLDOWN) return;
+    lastMoveTime = now;
+
+    let nl = player.lane;
+    let nr = player.row;
+
+    if (direction === 'left') nl--;
+    else if (direction === 'right') nl++;
+    else if (direction === 'up') nr++;
+    else if (direction === 'down') nr = Math.max(0, nr - 1);
+    else return;
+
+    nl = Math.max(0, Math.min(LANES - 1, nl));
+    nr = Math.max(0, Math.min(worldLength - 1, nr));
+
+    if (nl === player.lane && nr === player.row) return;
+
+    if (!isOpen(nl, nr)) {
+      sound.block();
+      say('جدار أسود يسد الطريق');
+      return;
+    }
+
+    player.lane = nl;
+    player.row = nr;
+    moves++;
+    sound.move();
+    collectCrystals();
+    checkWin();
+    updateStats();
+  }
+
   function restartLevel() {
-    player = { x: 1.5, y: 1.5, angle: 0 };
-    visualX = 1.5;
-    visualY = 1.5;
-    visualAngle = 0;
+    if (won && !confirm('سيتم فقدان نتيجة المرحلة الحالية. متابعة؟')) return;
     moves = 0;
     crystals = 0;
     elapsed = 0;
     paused = false;
     won = false;
-    showSuccessScreen = false;
+    success = false;
     message = '';
-    generateMaze();
+    generateWorld();
     say('المرحلة ' + level);
     updateStats();
   }
@@ -541,8 +556,16 @@
     if (!won) { say('أكمل المرحلة أولًا'); return; }
     level++;
     saveProgress();
-    restartLevel();
+    moves = 0;
+    crystals = 0;
+    elapsed = 0;
+    paused = false;
+    won = false;
+    success = false;
+    message = '';
+    generateWorld();
     say('المرحلة ' + level);
+    updateStats();
   }
 
   function togglePause() {
@@ -552,7 +575,6 @@
     updateStats();
   }
 
-  /* ============ الإدخال (سحب) ============ */
   function onPointerDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     pointerStart = { x: e.clientX, y: e.clientY, time: performance.now(), id: e.pointerId };
@@ -565,22 +587,20 @@
     const dy = e.clientY - pointerStart.y;
     const dur = performance.now() - pointerStart.time;
     pointerStart = null;
-
     if (paused || won) return;
 
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
+    const SWIPE = 24;
 
-    if (absX < 24 && absY < 24) {
+    if (absX < SWIPE && absY < SWIPE) {
       if (dur < 400) move('up');
       return;
     }
 
     if (absX > absY) {
-      // سحب أفقي: دوران
-      move(dx > 0 ? 'right' : 'left');
+      move(dx < 0 ? 'left' : 'right');
     } else {
-      // سحب عمودي: تقدم/تراجع
       move(dy < 0 ? 'up' : 'down');
     }
   }
@@ -596,7 +616,6 @@
     if (e.key === 'Escape' || e.key === ' ') { e.preventDefault(); togglePause(); }
   }
 
-  /* ============ حلقة الرسم ============ */
   function frame(time) {
     animationId = requestAnimationFrame(frame);
     if (!lastFrame) lastFrame = time;
@@ -605,37 +624,46 @@
 
     if (!paused && !won) {
       elapsed += delta;
-      const lerp = 1 - Math.pow(0.001, delta);
-      player.x += (visualX - player.x) * lerp;
-      player.y += (visualY - player.y) * lerp;
-      if (time % 250 < 20) updateStats();
+      const lerp = 1 - Math.pow(0.0005, delta);
+      player.vLane += (player.lane - player.vLane) * lerp;
+      player.vRow += (player.row - player.vRow) * lerp;
+      if (time - lastTick >= 250) { lastTick = time; updateStats(); }
     }
 
     render(time);
   }
 
-  /* ============ ربط الأزرار ============ */
   function bindUI() {
     const rb = $('restartButton');
     const nb = $('nextButton');
     const pb = $('pauseButton');
+    const cap = $('caption');
     if (rb) rb.addEventListener('click', restartLevel);
     if (nb) nb.addEventListener('click', nextLevel);
     if (pb) pb.addEventListener('click', togglePause);
+    if (cap) setTimeout(() => cap.classList.add('hidden'), 6000);
   }
 
-  /* ============ تشغيل ============ */
   canvas.style.touchAction = 'none';
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', () => { pointerStart = null; });
   document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('drder:move', e => { if (e.detail && e.detail.direction) move(e.detail.direction); });
+  document.addEventListener('drder:restart', restartLevel);
+  document.addEventListener('drder:pause', togglePause);
+  document.addEventListener('drder:next', nextLevel);
   window.addEventListener('resize', () => syncCanvas());
+  window.addEventListener('orientationchange', () => setTimeout(syncCanvas, 100));
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && !paused && !won) togglePause();
+  });
 
   loadProgress();
-  generateMaze();
+  generateWorld();
   bindUI();
   updateStats();
+  syncCanvas();
 
   cancelAnimationFrame(animationId);
   animationId = requestAnimationFrame(frame);
@@ -644,8 +672,8 @@
     getGameState: () => ({
       level, moves, crystals, won, paused,
       elapsed: Math.round(elapsed * 10) / 10,
-      player: { x: player.x, y: player.y, angle: player.angle },
-      mazeSize: { w: MAZE_W, h: MAZE_H }
+      player: { lane: player.lane, row: player.row },
+      worldLength
     })
   };
 
