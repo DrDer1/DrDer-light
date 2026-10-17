@@ -863,4 +863,83 @@
     animationId = requestAnimationFrame(frame);
 
     if (!lastFrame) lastFrame = time;
-    const delta = Math.min(0.1, (time - lastFrame) / 1000
+    const delta = Math.min(0.1, (time - lastFrame) / 1000);
+    lastFrame = time;
+
+    if (!paused && !won) {
+      elapsed += delta;
+
+      const lerpFactor = 1 - Math.pow(0.001, delta);
+      player.visualLane += (player.lane - player.visualLane) * lerpFactor;
+      player.visualZ += (player.z - player.visualZ) * lerpFactor;
+
+      if (time - lastSecondTick >= 250) {
+        lastSecondTick = time;
+        updateStats();
+      }
+    }
+
+    render(time);
+  }
+
+  /* ============ ربط الأزرار ============ */
+  function bindUI() {
+    const rb = $('restartButton');
+    const nb = $('nextButton');
+    const pb = $('pauseButton');
+    const cap = $('caption');
+
+    if (rb) rb.addEventListener('click', restartLevel);
+    if (nb) nb.addEventListener('click', nextLevel);
+    if (pb) pb.addEventListener('click', togglePause);
+
+    if (cap) {
+      setTimeout(() => cap.classList.add('hidden'), 6000);
+    }
+  }
+
+  /* ============ تشغيل ============ */
+  canvas.style.touchAction = 'none';
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', () => { pointerStart = null; });
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('drder:move', e => {
+    if (e.detail && e.detail.direction) move(e.detail.direction);
+  });
+  document.addEventListener('drder:restart', restartLevel);
+  document.addEventListener('drder:pause', togglePause);
+  document.addEventListener('drder:next', nextLevel);
+
+  window.addEventListener('resize', () => syncCanvas());
+  window.addEventListener('orientationchange', () => setTimeout(syncCanvas, 100));
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && !paused && !won) togglePause();
+  });
+
+  loadProgress();
+  generateWorld();
+  bindUI();
+  updateStats();
+  syncCanvas();
+
+  cancelAnimationFrame(animationId);
+  animationId = requestAnimationFrame(frame);
+
+  window.DrDerLight = {
+    getGameState: () => ({
+      level, moves, crystals, won, paused, bestLevel,
+      elapsed: Math.round(elapsed * 10) / 10,
+      player: { lane: player.lane, z: player.z },
+      worldLength
+    })
+  };
+
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./service-worker.js')
+        .catch(err => console.warn('SW registration failed', err));
+    });
+  }
+})();
