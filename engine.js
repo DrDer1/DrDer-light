@@ -53,8 +53,6 @@
   let walkAudio = null;
   let doorAudio = null;
   let isWalking = false;
-  let walkSource = null;
-  let walkGain = null;
 
   const $ = id => document.getElementById(id);
 
@@ -81,14 +79,12 @@
       stack.push(nxt);
     }
 
-    // فتح ممرات أفقية عشوائية (مسارات خادعة إضافية)
     for (let y = 3; y < MAZE_H - 3; y += 4) {
       for (let x = 1; x < MAZE_W - 1; x++) {
         if (Math.random() > 0.4) maze[y][x] = 0;
       }
     }
 
-    // ممرات جانبية خادعة (مسدودة جزئياً)
     for (let i = 0; i < 15; i++) {
       const sx = 2 + Math.floor(Math.random() * (MAZE_W - 4));
       const sy = 3 + Math.floor(Math.random() * (MAZE_H - 10));
@@ -103,16 +99,13 @@
       }
     }
 
-    // بداية آمنة
     maze[1][1] = 0;
     maze[1][2] = 0;
     player = { x: 1.5, y: 1.5, angle: 0 };
 
-    // البوابة
     portalPos = { x: MAZE_W - 2.5, y: MAZE_H - 2.5 };
     maze[MAZE_H - 2][MAZE_W - 2] = 0;
 
-    // مفاتيح (بدل البلورات)
     crystalsPos = [];
     const used = new Set(['1,1']);
     let tries = 0;
@@ -152,7 +145,6 @@
 
   function say(text, dur = 1500) { message = text; messageUntil = performance.now() + dur; }
 
-  // Audio setup
   function initAudio() {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -163,7 +155,6 @@
   }
 
   function loadAudio() {
-    if (!audioCtx) return;
     try {
       walkAudio = new Audio('./walk.mp3');
       walkAudio.loop = true;
@@ -207,7 +198,6 @@
   }
 
   const sound = {
-    move: () => tone(520, 0.05, 0.02),
     crystal: () => { tone(880, 0.10, 0.05); setTimeout(() => tone(1320, 0.14, 0.04), 70); },
     win: () => { tone(660, 0.14, 0.06); setTimeout(() => tone(990, 0.14, 0.06), 90); setTimeout(() => tone(1320, 0.22, 0.055), 200); },
     block: () => tone(180, 0.08, 0.03)
@@ -304,7 +294,6 @@
       }
     }
 
-    // Draw keys (replaced crystals)
     crystalsPos.forEach(c => {
       if (c.collected) return;
       const dx = c.x - player.x, dy = c.y - player.y;
@@ -322,7 +311,6 @@
         ctx.save();
         ctx.shadowColor = GOLD; ctx.shadowBlur = 18;
         ctx.translate(screenX, yPos + bob);
-        // Key shape
         ctx.fillStyle = GOLD;
         ctx.beginPath();
         ctx.arc(0, 0, size * 0.5, 0, Math.PI * 2);
@@ -334,7 +322,6 @@
       }
     });
 
-    // Draw portal as a real door (rectangle with arch)
     const pdx = portalPos.x - player.x, pdy = portalPos.y - player.y;
     const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
     if (pdist > 0.2) {
@@ -350,7 +337,6 @@
           const doorH = size * 1.6;
           ctx.save();
           ctx.shadowColor = GOLD; ctx.shadowBlur = 22;
-          // Door frame (arch)
           ctx.fillStyle = '#1a1508';
           ctx.beginPath();
           ctx.moveTo(sx - doorW / 2, h / 2 + doorH / 2);
@@ -359,11 +345,9 @@
           ctx.lineTo(sx + doorW / 2, h / 2 + doorH / 2);
           ctx.closePath();
           ctx.fill();
-          // Door glow border
           ctx.strokeStyle = GOLD;
           ctx.lineWidth = Math.max(2, 3 / pdist * 4);
           ctx.stroke();
-          // Door inner glow
           ctx.strokeStyle = 'rgba(255,226,130,0.6)';
           ctx.lineWidth = Math.max(1, 1.5 / pdist * 4);
           ctx.beginPath();
@@ -372,7 +356,6 @@
           ctx.quadraticCurveTo(sx, h / 2 - doorH / 2 - doorW * 0.4 + 3, sx + doorW / 2 - 3, h / 2 - doorH / 2 + 3);
           ctx.lineTo(sx + doorW / 2 - 3, h / 2 + doorH / 2 - 3);
           ctx.stroke();
-          // Keyhole
           ctx.fillStyle = GOLD;
           ctx.beginPath();
           ctx.arc(sx, h / 2 - doorH * 0.1, size * 0.1, 0, Math.PI * 2);
@@ -396,7 +379,6 @@
     ctx.shadowColor = GOLD; ctx.shadowBlur = 8;
     ctx.fillStyle = GOLD_LIGHT;
     ctx.fillText('المفاتيح ' + crystals + '/' + CRYSTAL_COUNT, w * 0.5, 22);
-    // Level indicator
     ctx.font = '600 12px sans-serif';
     ctx.fillText('المرحلة ' + level, w * 0.5, 44);
     ctx.restore();
@@ -407,7 +389,6 @@
     const baseX = w * 0.5;
     const baseY = h * 0.82;
 
-    // Base circle
     ctx.save();
     ctx.strokeStyle = 'rgba(233,184,63,0.4)';
     ctx.lineWidth = 2;
@@ -415,7 +396,6 @@
     ctx.arc(baseX, baseY, JOYSTICK_RADIUS, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Inner glow
     const grad = ctx.createRadialGradient(baseX, baseY, 5, baseX, baseY, JOYSTICK_RADIUS);
     grad.addColorStop(0, 'rgba(233,184,63,0.15)');
     grad.addColorStop(1, 'rgba(233,184,63,0)');
@@ -424,7 +404,6 @@
     ctx.arc(baseX, baseY, JOYSTICK_RADIUS, 0, Math.PI * 2);
     ctx.fill();
 
-    // Knob
     let knobX = joystickCurrentX;
     let knobY = joystickCurrentY;
     const dx = knobX - joystickStartX;
@@ -510,8 +489,9 @@
       return;
     }
 
-    const speed = 2.5;
-    const rotSpeed = 2.0;
+    // تقليل السرعة لتصبح أكثر واقعية وأقل حدة
+    const speed = 1.2; 
+    const rotSpeed = 1.2;
 
     let dx = 0, dy = 0;
     let moving = false;
@@ -540,7 +520,6 @@
       if (canMove(player.x + dx, player.y + dy)) {
         player.x += dx; player.y += dy;
         moves++;
-        sound.move();
         checkCollect();
         checkWin();
         startWalkSound();
@@ -604,16 +583,13 @@
     updateStats();
   }
 
-  // Virtual joystick handlers
   function onPointerDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     initAudio();
-    if (!audioCtx) initAudio();
     if (!walkAudio) loadAudio();
 
     joystickActive = true;
     joystickPointerId = e.pointerId;
-    const rect = canvas.getBoundingClientRect();
     joystickStartX = e.clientX;
     joystickStartY = e.clientY;
     joystickCurrentX = e.clientX;
@@ -642,11 +618,9 @@
     const ny = dy / dist;
     const strength = Math.min(1, dist / JOYSTICK_RADIUS);
 
-    // Forward/backward based on vertical drag
-    moveForward = -ny * strength; // negative because screen Y increases downward
-    // Side strafe based on horizontal
+    moveForward = -ny * strength;
     moveSide = nx * strength;
-    // Rotation: if dragging mostly horizontal, rotate
+    
     if (Math.abs(dx) > Math.abs(dy) * 1.5) {
       rotateSpeed = nx * strength;
     } else {
