@@ -1,295 +1,15 @@
-
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#050505">
-  <meta name="description" content="DrDer-light — انطلق في عالم ذهبي متجدد من منظور خلف الكرة.">
+  <meta name="theme-color" content="#080808">
+  <meta name="description" content="DrDer-light — طريق ذهبي لانهائي، اجمع البلورات واعثر على البوابة.">
   <title>DrDer-light</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" type="image/png" href="./192.png">
+  <link rel="apple-touch-icon" href="./192.png">
   <link rel="stylesheet" href="./style.css">
-
-  <style>
-    :root {
-      color-scheme: dark;
-      --bg: #050505;
-      --panel: #101010;
-      --gold: #e9b83f;
-      --gold-light: #ffdf79;
-      --text: #f7f0dd;
-      --muted: #a9a18e;
-      --border: #39301c;
-    }
-
-    * {
-      box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    html {
-      min-height: 100%;
-      background: var(--bg);
-    }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      min-height: 100dvh;
-      background:
-        radial-gradient(ellipse at 50% 15%, #21190a 0%, transparent 52%),
-        var(--bg);
-      color: var(--text);
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      user-select: none;
-      overscroll-behavior: none;
-    }
-
-    button {
-      font: inherit;
-    }
-
-    .app {
-      width: min(100%, 760px);
-      min-height: 100vh;
-      min-height: 100dvh;
-      margin: 0 auto;
-      padding:
-        max(10px, env(safe-area-inset-top))
-        12px
-        max(12px, env(safe-area-inset-bottom));
-      display: flex;
-      flex-direction: column;
-      gap: 11px;
-    }
-
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-shrink: 0;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
-    }
-
-    .brand img {
-      width: 43px;
-      height: 43px;
-      object-fit: contain;
-      border-radius: 12px;
-    }
-
-    .brand h1 {
-      margin: 0;
-      color: var(--gold-light);
-      font-size: 21px;
-      letter-spacing: 0.4px;
-    }
-
-    .brand p {
-      margin: 3px 0 0;
-      color: var(--muted);
-      font-size: 11px;
-    }
-
-    .icon-button,
-    .action-button {
-      border: 1px solid var(--border);
-      color: var(--gold-light);
-      background: linear-gradient(145deg, #1d1a13, #101010);
-      border-radius: 12px;
-      cursor: pointer;
-      touch-action: manipulation;
-    }
-
-    .icon-button {
-      min-width: 44px;
-      min-height: 44px;
-      font-size: 20px;
-    }
-
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 7px;
-      flex-shrink: 0;
-    }
-
-    .stat {
-      min-width: 0;
-      padding: 9px 3px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: linear-gradient(145deg, #181818, #101010);
-      text-align: center;
-    }
-
-    .stat-label {
-      display: block;
-      color: var(--muted);
-      font-size: 10px;
-      margin-bottom: 4px;
-    }
-
-    .stat-value {
-      display: block;
-      color: var(--gold-light);
-      font-size: 16px;
-      font-weight: 750;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .game-frame {
-      position: relative;
-      width: 100%;
-      height: clamp(390px, 62vh, 720px);
-      height: clamp(390px, 62dvh, 720px);
-      min-height: 340px;
-      flex: 1 0 auto;
-      overflow: hidden;
-      border: 1px solid #47391b;
-      border-radius: 18px;
-      background: #050505;
-      box-shadow:
-        0 0 30px #b17b1412,
-        inset 0 0 25px #000;
-      touch-action: none;
-      isolation: isolate;
-    }
-
-    #gameCanvas {
-      position: absolute;
-      inset: 0;
-      display: block;
-      width: 100%;
-      height: 100%;
-      touch-action: none;
-      cursor: grab;
-      outline: none;
-    }
-
-    #gameCanvas:active {
-      cursor: grabbing;
-    }
-
-    .touch-hint {
-      position: absolute;
-      z-index: 2;
-      left: 50%;
-      bottom: 13px;
-      transform: translateX(-50%);
-      width: max-content;
-      max-width: calc(100% - 24px);
-      padding: 8px 13px;
-      border: 1px solid #8f6b2c70;
-      border-radius: 999px;
-      background: #080808bd;
-      color: #e9c66e;
-      font-size: 11px;
-      line-height: 1.5;
-      text-align: center;
-      pointer-events: none;
-      backdrop-filter: blur(6px);
-      transition: opacity 0.4s ease;
-    }
-
-    .touch-hint.hidden {
-      opacity: 0;
-    }
-
-    .game-caption {
-      margin: 0 4px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.7;
-      text-align: center;
-    }
-
-    .actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 9px;
-      flex-shrink: 0;
-    }
-
-    .action-button {
-      min-height: 46px;
-      padding: 9px;
-      font-size: 13px;
-      font-weight: 650;
-    }
-
-    .icon-button:active,
-    .action-button:active {
-      transform: scale(0.97);
-      background: #30230c;
-    }
-
-    .footer {
-      padding-top: 2px;
-      color: #756b55;
-      font-size: 10px;
-      text-align: center;
-      flex-shrink: 0;
-    }
-
-    @media (min-width: 600px) {
-      .app {
-        padding-left: 18px;
-        padding-right: 18px;
-      }
-
-      .game-frame {
-        height: min(68vh, 760px);
-      }
-    }
-
-    @media (max-height: 650px) {
-      .app {
-        gap: 7px;
-      }
-
-      .brand img {
-        width: 35px;
-        height: 35px;
-      }
-
-      .brand h1 {
-        font-size: 18px;
-      }
-
-      .stats .stat {
-        padding: 6px 3px;
-      }
-
-      .game-frame {
-        height: 54vh;
-        height: 54dvh;
-        min-height: 250px;
-      }
-
-      .touch-hint {
-        bottom: 7px;
-        padding: 5px 10px;
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      *,
-      *::before,
-      *::after {
-        scroll-behavior: auto !important;
-        transition: none !important;
-      }
-    }
-  </style>
 </head>
 
 <body>
@@ -299,17 +19,13 @@
         <img src="./192.png" alt="DrDer-light">
         <div>
           <h1>DrDer-light</h1>
-          <p>عالم ذهبي من منظور خلف الكرة</p>
+          <p>اجمع البلورات وافتح البوابة</p>
         </div>
       </div>
 
-      <button
-        class="icon-button"
-        id="pauseButton"
-        type="button"
-        aria-label="إيقاف اللعبة مؤقتًا"
-        title="إيقاف مؤقت"
-      >Ⅱ</button>
+      <button class="icon-button" id="pauseButton"
+        type="button" aria-label="إيقاف اللعبة مؤقتًا"
+        title="إيقاف مؤقت">Ⅱ</button>
     </header>
 
     <section class="stats" aria-label="إحصائيات المرحلة">
@@ -317,43 +33,46 @@
         <span class="stat-label">المرحلة</span>
         <span class="stat-value" id="levelValue">1</span>
       </div>
-
       <div class="stat">
         <span class="stat-label">الحركات</span>
         <span class="stat-value" id="movesValue">0</span>
       </div>
-
       <div class="stat">
         <span class="stat-label">البلورات</span>
         <span class="stat-value" id="crystalsValue">0/2</span>
       </div>
-
       <div class="stat">
         <span class="stat-label">الوقت</span>
         <span class="stat-value" id="timeValue">00:00</span>
       </div>
     </section>
 
-    <section class="game-frame" aria-label="عالم DrDer-light">
-      <canvas id="gameCanvas" tabindex="0" aria-label="اسحب للتحرك داخل العالم">
+    <section class="game-frame" aria-label="لوحة المتاهة">
+      <canvas id="gameCanvas">
         متصفحك لا يدعم عرض اللعبة.
       </canvas>
-
-      <div class="touch-hint" id="touchHint">
-        اسحب لأعلى للتقدم · يمينًا ويسارًا لتغيير المسار
-      </div>
     </section>
 
     <p class="game-caption">
-      استكشف الطريق أمامك من خلف الكرة، واجمع البلورتين الذهبيتين
-      ثم اعثر على البوابة. لا حاجة إلى أزرار الاتجاهات.
+      حرّك الكرة الذهبية عبر الطريق، واجمع البلورتين ثم ادخل البوابة المضيئة.
+      يمكنك السحب على اللوحة أو استخدام أزرار الاتجاهات.
     </p>
 
-    <section class="actions" aria-label="إجراءات اللعبة">
+    <section class="controls" aria-label="أزرار الحركة">
+      <button class="direction-button" id="moveUp"
+        type="button" aria-label="تحرك للأعلى">↑</button>
+      <button class="direction-button" id="moveLeft"
+        type="button" aria-label="تحرك لليسار">←</button>
+      <button class="direction-button" id="moveDown"
+        type="button" aria-label="تحرك للأسفل">↓</button>
+      <button class="direction-button" id="moveRight"
+        type="button" aria-label="تحرك لليمين">→</button>
+    </section>
+
+    <section class="actions">
       <button class="action-button" id="restartButton" type="button">
         ↻ إعادة المرحلة
       </button>
-
       <button class="action-button" id="nextButton" type="button">
         المرحلة التالية ›
       </button>
@@ -364,153 +83,6 @@
     </footer>
   </main>
 
-  <script>
-    (() => {
-      'use strict';
-
-      const canvas = document.getElementById('gameCanvas');
-      const ctx = canvas.getContext('2d', { alpha: false });
-
-      const app = {
-        canvas,
-        ctx,
-        resizeCanvas,
-        updateStats
-      };
-
-      window.DrDerLight = app;
-
-      let engineLoaded = false;
-      let resizeFrame = 0;
-
-      function resizeCanvas() {
-        const rect = canvas.getBoundingClientRect();
-        const ratio = Math.min(window.devicePixelRatio || 1, 2);
-
-        const width = Math.max(1, Math.round(rect.width));
-        const height = Math.max(1, Math.round(rect.height));
-
-        if (
-          canvas.width !== Math.round(width * ratio) ||
-          canvas.height !== Math.round(height * ratio)
-        ) {
-          canvas.width = Math.round(width * ratio);
-          canvas.height = Math.round(height * ratio);
-        }
-
-        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-
-        if (engineLoaded) {
-          document.dispatchEvent(new Event('drder:resize'));
-        }
-      }
-
-      function updateStats(stats) {
-        if (!stats) return;
-
-        document.getElementById('levelValue').textContent =
-          String(stats.level ?? 1);
-
-        document.getElementById('movesValue').textContent =
-          String(stats.moves ?? 0);
-
-        document.getElementById('crystalsValue').textContent =
-          `${stats.collected ?? 0}/${stats.crystals ?? 2}`;
-
-        const total = Math.floor(stats.time ?? 0);
-        const minutes = Math.floor(total / 60);
-        const seconds = total % 60;
-
-        document.getElementById('timeValue').textContent =
-          `${String(minutes).padStart(2, '0')}:` +
-          `${String(seconds).padStart(2, '0')}`;
-
-        const pauseButton = document.getElementById('pauseButton');
-
-        pauseButton.textContent = stats.paused ? '▶' : 'Ⅱ';
-        pauseButton.setAttribute(
-          'aria-label',
-          stats.paused ? 'استئناف اللعبة' : 'إيقاف اللعبة مؤقتًا'
-        );
-
-        const nextButton = document.getElementById('nextButton');
-
-        nextButton.disabled = !stats.won;
-        nextButton.style.opacity = stats.won ? '1' : '0.65';
-      }
-
-      document.getElementById('restartButton').addEventListener('click', () => {
-        document.dispatchEvent(new Event('drder:restart'));
-      });
-
-      document.getElementById('pauseButton').addEventListener('click', () => {
-        document.dispatchEvent(new Event('drder:pause'));
-      });
-
-      document.getElementById('nextButton').addEventListener('click', () => {
-        document.dispatchEvent(new Event('drder:next'));
-      });
-
-      /*
-       * The engine owns movement gestures.
-       * This hint disappears after the player first touches the game.
-       */
-      const touchHint = document.getElementById('touchHint');
-      let hintDismissed = false;
-
-      canvas.addEventListener('pointerdown', () => {
-        if (hintDismissed) return;
-
-        hintDismissed = true;
-        touchHint.classList.add('hidden');
-      }, { passive: true });
-
-      function scheduleResize() {
-        cancelAnimationFrame(resizeFrame);
-        resizeFrame = requestAnimationFrame(resizeCanvas);
-      }
-
-      window.addEventListener('resize', scheduleResize);
-      window.addEventListener('orientationchange', () => {
-        setTimeout(scheduleResize, 100);
-      });
-
-      if ('ResizeObserver' in window) {
-        const observer = new ResizeObserver(scheduleResize);
-        observer.observe(canvas.parentElement);
-      }
-
-      resizeCanvas();
-
-      const engine = document.createElement('script');
-      engine.src = './engine.js';
-      engine.async = false;
-
-      engine.onload = () => {
-        engineLoaded = true;
-        resizeCanvas();
-      };
-
-      engine.onerror = () => {
-        const rect = canvas.getBoundingClientRect();
-
-        ctx.fillStyle = '#050505';
-        ctx.fillRect(0, 0, rect.width, rect.height);
-
-        ctx.fillStyle = '#ffdf79';
-        ctx.font = 'bold 16px system-ui, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.direction = 'rtl';
-
-        ctx.fillText(
-          'تعذّر تحميل engine.js',
-          rect.width / 2,
-          rect.height / 2
-        );
-      };
-
-      document.body.appendChild(engine);
-    })();
-  </script>
+  <script src="./engine.js" defer></script>
 </body>
 </html>
