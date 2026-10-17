@@ -1,5 +1,5 @@
 /* DrDer-Light — engine.js
-   متاهة حقيقية بـ Raycasting. إضاءة محسّنة، جدران صلبة، أرضية ذهبية.
+   متاهة حقيقية بـ Raycasting. إضاءة محسّنة، جدران صلبة، بداية آمنة.
 */
 (() => {
   'use strict';
@@ -8,7 +8,7 @@
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const SAVE_KEY = 'drder-light-save-v6';
+  const SAVE_KEY = 'drder-light-save-v7';
   const CRYSTAL_COUNT = 2;
   const MAZE_W = 15;
   const MAZE_H = 51;
@@ -29,7 +29,7 @@
   let lastFrame = 0;
   let lastTick = 0;
 
-  let player = { x: 1.5, y: 1.5, angle: 0 };
+  let player = { x: 1.5, y: 1.5, angle: Math.PI / 2 };
   let maze = [];
   let crystalsPos = [];
   let portalPos = { x: 1.5, y: 1.5 };
@@ -67,8 +67,10 @@
       }
     }
 
-    player = { x: 1.5, y: 1.5, angle: 0 };
+    // البداية: تأكد أن الأمام مفتوح
     maze[1][1] = 0;
+    maze[1][2] = 0; // فتح خلية أمام اللاعب
+    player = { x: 1.5, y: 1.5, angle: 0 }; // 0 = نظرة نحو اليمين (شرقاً)
 
     portalPos = { x: MAZE_W - 2.5, y: MAZE_H - 2.5 };
     maze[MAZE_H - 2][MAZE_W - 2] = 0;
@@ -214,7 +216,9 @@
       let perpWallDist;
       if (side === 0) perpWallDist = (sideDistX - deltaDistX);
       else perpWallDist = (sideDistY - deltaDistY);
-      if (perpWallDist < 0.01) perpWallDist = 0.01;
+      
+      // منع الشاشة السوداء عند الالتصاق بالجدار
+      if (perpWallDist < 0.1) perpWallDist = 0.1;
 
       const wallH = Math.floor((h / perpWallDist) * 0.75);
       let drawStart = Math.floor(-wallH / 2 + h / 2);
@@ -222,19 +226,27 @@
       if (drawStart < 0) drawStart = 0;
       if (drawEnd > h) drawEnd = h;
 
-      // إضاءة الجدار بناءً على المسافة والاتجاه
-      let baseColor = side === 0 ? [18, 16, 12] : [10, 9, 7]; // ألوان أساسية للجدران
-      const shade = Math.min(1, 2.5 / perpWallDist); // كلما زاد البعد كلما زاد الظلام
-      const r = Math.floor(baseColor[0] * shade);
-      const g = Math.floor(baseColor[1] * shade);
-      const b = Math.floor(baseColor[2] * shade);
+      // ألوان الجدران (تدرج رمادي داكن ليبرز الشكل)
+      let colorR = side === 0 ? 30 : 15;
+      let colorG = side === 0 ? 30 : 15;
+      let colorB = side === 0 ? 30 : 15;
+      
+      const shade = Math.min(1, 2.0 / perpWallDist); 
+      colorR = Math.floor(colorR * shade);
+      colorG = Math.floor(colorG * shade);
+      colorB = Math.floor(colorB * shade);
 
-      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      // إضاءة أساسية حتى لا يختفي الجدار القريب
+      colorR = Math.max(8, colorR);
+      colorG = Math.max(8, colorG);
+      colorB = Math.max(8, colorB);
+
+      ctx.fillStyle = `rgb(${colorR}, ${colorG}, ${colorB})`;
       ctx.fillRect(screenX, drawStart, rayStep + 1, drawEnd - drawStart);
 
       // خط ذهبي رفيع على حافة الجدار العلوية
       if (wallH > 5) {
-        ctx.fillStyle = 'rgba(233,184,63,0.25)';
+        ctx.fillStyle = 'rgba(233,184,63,0.3)';
         ctx.fillRect(screenX, drawStart, rayStep + 1, Math.max(1, wallH * 0.015));
       }
     }
@@ -251,7 +263,7 @@
       if (Math.abs(diff) < fov / 2 && dist > 0.2) {
         const screenX = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
         if (screenX < 0 || screenX > w) return;
-        const size = Math.max(2, 30 / dist);
+        const size = Math.max(4, 30 / dist);
         const yPos = h / 2; 
         ctx.save();
         ctx.shadowColor = GOLD; ctx.shadowBlur = 18;
@@ -272,7 +284,7 @@
       if (Math.abs(diff) < fov / 2) {
         const sx = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
         if (sx >= 0 && sx <= w) {
-          const size = Math.max(4, 50 / pdist);
+          const size = Math.max(6, 50 / pdist);
           ctx.save();
           ctx.shadowColor = GOLD; ctx.shadowBlur = 22;
           ctx.strokeStyle = GOLD;
@@ -284,13 +296,6 @@
         }
       }
     }
-
-    // رسم هالة الكرة في الأسفل
-    const glow = ctx.createRadialGradient(w/2, h*0.9, 5, w/2, h*0.9, w*0.4);
-    glow.addColorStop(0, 'rgba(233,184,63,0.15)');
-    glow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, h*0.5, w, h*0.5);
 
     drawHUD(w, h);
     drawMessage(w, h);
