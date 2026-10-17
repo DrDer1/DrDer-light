@@ -67,10 +67,9 @@
       }
     }
 
-    // البداية: تأكد أن الأمام مفتوح
     maze[1][1] = 0;
-    maze[1][2] = 0; // فتح خلية أمام اللاعب
-    player = { x: 1.5, y: 1.5, angle: 0 }; // 0 = نظرة نحو اليمين (شرقاً)
+    maze[1][2] = 0; 
+    player = { x: 1.5, y: 1.5, angle: 0 };
 
     portalPos = { x: MAZE_W - 2.5, y: MAZE_H - 2.5 };
     maze[MAZE_H - 2][MAZE_W - 2] = 0;
@@ -105,16 +104,13 @@
     const t = Math.max(0, Math.floor(sec));
     return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
   }
+  
   function updateStats() {
-    const lv = $('levelValue'), cr = $('crystalsValue'), tm = $('timeValue');
-    const bt = $('bestValue'), nb = $('nextButton'), pb = $('pauseButton');
-    if (lv) lv.textContent = String(level);
-    if (cr) cr.textContent = crystals + '/' + CRYSTAL_COUNT;
-    if (tm) tm.textContent = formatTime(elapsed);
-    if (bt) { const b = bestTimes[String(level)]; bt.textContent = b ? formatTime(b) : '--:--'; }
+    const nb = $('nextButton'), pb = $('pauseButton');
     if (nb) nb.disabled = !won;
     if (pb) pb.textContent = paused ? '▶' : 'Ⅱ';
   }
+  
   function say(text, dur = 1500) { message = text; messageUntil = performance.now() + dur; }
 
   function tone(freq, dur, vol) {
@@ -153,7 +149,6 @@
     const dims = syncCanvas();
     const { w, h } = dims;
 
-    // السماء والأرضية
     const sky = ctx.createLinearGradient(0, 0, 0, h * 0.5);
     sky.addColorStop(0, '#020202');
     sky.addColorStop(1, '#0a0805');
@@ -166,7 +161,6 @@
     ctx.fillStyle = floor;
     ctx.fillRect(0, h * 0.5, w, h * 0.5);
 
-    // Raycasting
     const fov = Math.PI / 3;
     const numRays = Math.min(w, 280);
     const rayStep = w / numRays;
@@ -217,7 +211,6 @@
       if (side === 0) perpWallDist = (sideDistX - deltaDistX);
       else perpWallDist = (sideDistY - deltaDistY);
       
-      // منع الشاشة السوداء عند الالتصاق بالجدار
       if (perpWallDist < 0.1) perpWallDist = 0.1;
 
       const wallH = Math.floor((h / perpWallDist) * 0.75);
@@ -226,7 +219,6 @@
       if (drawStart < 0) drawStart = 0;
       if (drawEnd > h) drawEnd = h;
 
-      // ألوان الجدران (تدرج رمادي داكن ليبرز الشكل)
       let colorR = side === 0 ? 30 : 15;
       let colorG = side === 0 ? 30 : 15;
       let colorB = side === 0 ? 30 : 15;
@@ -236,7 +228,6 @@
       colorG = Math.floor(colorG * shade);
       colorB = Math.floor(colorB * shade);
 
-      // إضاءة أساسية حتى لا يختفي الجدار القريب
       colorR = Math.max(8, colorR);
       colorG = Math.max(8, colorG);
       colorB = Math.max(8, colorB);
@@ -244,14 +235,12 @@
       ctx.fillStyle = `rgb(${colorR}, ${colorG}, ${colorB})`;
       ctx.fillRect(screenX, drawStart, rayStep + 1, drawEnd - drawStart);
 
-      // خط ذهبي رفيع على حافة الجدار العلوية
       if (wallH > 5) {
         ctx.fillStyle = 'rgba(233,184,63,0.3)';
         ctx.fillRect(screenX, drawStart, rayStep + 1, Math.max(1, wallH * 0.015));
       }
     }
 
-    // رسم البلورات
     crystalsPos.forEach(c => {
       if (c.collected) return;
       const dx = c.x - player.x, dy = c.y - player.y;
@@ -273,7 +262,6 @@
       }
     });
 
-    // رسم البوابة
     const pdx = portalPos.x - player.x, pdy = portalPos.y - player.y;
     const pdist = Math.sqrt(pdx*pdx + pdy*pdy);
     if (pdist > 0.2) {
@@ -403,7 +391,6 @@
       if (Math.sqrt(dx*dx + dy*dy) < 0.6) {
         c.collected = true; crystals++;
         sound.crystal(); say('تم جمع البلورة الذهبية!');
-        updateStats();
       }
     });
   }
@@ -472,7 +459,6 @@
     lastFrame = time;
     if (!paused && !won) {
       elapsed += delta;
-      if (time - lastTick >= 250) { lastTick = time; updateStats(); }
     }
     render(time);
   }
