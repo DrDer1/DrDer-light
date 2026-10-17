@@ -1,24 +1,26 @@
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#080808">
-  <meta name="description" content="DrDer-light — متاهة ذهبية ثلاثية الأبعاد، اجمع البلورات واعثر على البوابة.">
+  <meta name="description" content="DrDer-light — متاهة ذهبية، اجمع البلورات واعثر على البوابة.">
   <title>DrDer-light</title>
-  <link rel="icon" type="image/png" href="192.png">
-  <link rel="apple-touch-icon" href="192.png">
-  <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/png" href="./192.png">
+  <link rel="stylesheet" href="./style.css">
+
   <style>
     :root {
       color-scheme: dark;
       --bg: #080808;
-      --panel: #121212;
-      --gold: #e9b936;
-      --bright: #ffe69a;
-      --muted: #8d8779;
-      --border: #39301a;
+      --panel: #141414;
+      --gold: #e9b83f;
+      --gold-light: #ffdf79;
+      --text: #f7f0dd;
+      --muted: #a9a18e;
+      --border: #39301c;
     }
 
     * {
@@ -26,39 +28,36 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    html, body {
-      margin: 0;
-      min-height: 100%;
-      background: var(--bg);
-    }
-
     body {
+      margin: 0;
+      min-height: 100vh;
       min-height: 100dvh;
-      color: #f8f4e9;
-      font-family: system-ui, sans-serif;
-      display: flex;
-      justify-content: center;
+      background:
+        radial-gradient(ellipse at 50% 10%, #21190a 0%, transparent 48%),
+        var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      user-select: none;
       overscroll-behavior: none;
     }
 
     button {
       font: inherit;
-      color: inherit;
-      touch-action: manipulation;
     }
 
     .app {
-      width: 100%;
-      max-width: 560px;
+      width: min(100%, 620px);
+      min-height: 100vh;
       min-height: 100dvh;
-      padding: max(14px, env(safe-area-inset-top)) 16px
-               max(16px, env(safe-area-inset-bottom));
+      margin: 0 auto;
+      padding: max(14px, env(safe-area-inset-top)) 14px
+        max(18px, env(safe-area-inset-bottom));
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
     }
 
-    .topbar {
+    .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -69,227 +68,195 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      min-width: 0;
     }
 
     .brand img {
-      width: 54px;
-      height: 54px;
+      width: 48px;
+      height: 48px;
       object-fit: contain;
       border-radius: 13px;
     }
 
     .brand h1 {
       margin: 0;
-      font-size: 21px;
-      letter-spacing: .4px;
-      direction: ltr;
-      text-align: right;
+      color: var(--gold-light);
+      font-size: 22px;
+      letter-spacing: 0.4px;
     }
 
     .brand p {
-      margin: 4px 0 0;
-      font-size: 11px;
+      margin: 3px 0 0;
       color: var(--muted);
+      font-size: 12px;
+    }
+
+    .icon-button,
+    .action-button,
+    .direction-button {
+      border: 1px solid var(--border);
+      color: var(--gold-light);
+      background: linear-gradient(145deg, #1d1a13, #101010);
+      border-radius: 12px;
+      cursor: pointer;
+      touch-action: manipulation;
     }
 
     .icon-button {
-      width: 43px;
-      height: 43px;
-      border: 1px solid var(--border);
-      border-radius: 13px;
-      background: var(--panel);
-      color: var(--bright);
+      min-width: 44px;
+      min-height: 44px;
       font-size: 20px;
-      cursor: pointer;
     }
 
     .stats {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 9px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
     }
 
     .stat {
       min-width: 0;
-      background: linear-gradient(145deg, #171510, #0d0d0d);
+      padding: 11px 4px;
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px 8px;
+      border-radius: 13px;
+      background: linear-gradient(145deg, #181818, #101010);
       text-align: center;
     }
 
     .stat-label {
+      display: block;
       color: var(--muted);
       font-size: 11px;
-      margin-bottom: 7px;
+      margin-bottom: 5px;
     }
 
     .stat-value {
-      font-size: 19px;
-      font-weight: 700;
-      color: var(--bright);
-      direction: ltr;
+      display: block;
+      color: var(--gold-light);
+      font-size: 17px;
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
     }
 
-    .game-heading {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-    }
-
-    .game-heading h2 {
-      margin: 0;
-      font-size: 15px;
-    }
-
-    .level-tag {
-      font-size: 11px;
-      color: var(--gold);
-      border: 1px solid var(--border);
-      background: #15120a;
-      padding: 6px 10px;
-      border-radius: 20px;
-    }
-
-    .scene {
+    .game-frame {
       position: relative;
       width: 100%;
-      aspect-ratio: 1 / 1.08;
-      min-height: 270px;
-      max-height: 490px;
+      height: clamp(330px, 53vh, 510px);
+      min-height: 300px;
       overflow: hidden;
-      border: 1px solid #51401b;
-      border-radius: 21px;
+      border: 1px solid #47391b;
+      border-radius: 18px;
       background:
-        radial-gradient(ellipse at 50% 43%, #252012 0%, #11100c 42%, #080808 78%);
+        radial-gradient(ellipse at 50% 40%, #171208, #080808 72%);
       box-shadow:
-        inset 0 0 40px #000,
-        0 0 24px #dca5260b;
-      touch-action: none;
+        0 0 24px #b17b1412,
+        inset 0 0 25px #000;
+      touch-action: pan-y;
     }
 
     #gameCanvas {
       display: block;
       width: 100%;
       height: 100%;
-      outline: none;
       touch-action: none;
     }
 
-    .scene-hint {
-      position: absolute;
-      inset-inline: 12px;
-      bottom: 12px;
-      padding: 9px 10px;
-      border-radius: 10px;
-      text-align: center;
-      background: #080808bb;
-      border: 1px solid #e9b93626;
-      color: #c8b982;
-      font-size: 11px;
-      pointer-events: none;
-    }
-
-    .message {
-      min-height: 20px;
-      text-align: center;
-      font-size: 12px;
+    .game-caption {
       color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+      text-align: center;
+      margin: -5px 4px 0;
     }
 
     .controls {
       display: grid;
-      grid-template-columns: repeat(3, 60px);
-      grid-template-rows: repeat(2, 53px);
+      grid-template-columns: repeat(3, 64px);
+      grid-template-rows: repeat(2, 56px);
       justify-content: center;
       gap: 7px;
       direction: ltr;
     }
 
-    .control {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 1px solid #57431a;
-      border-radius: 14px;
-      background: linear-gradient(145deg, #201b10, #100f0b);
-      color: var(--bright);
-      font-size: 23px;
-      cursor: pointer;
-      user-select: none;
+    .direction-button {
+      font-size: 24px;
+      font-weight: 700;
+      border-radius: 15px;
+      box-shadow: inset 0 1px #ffffff0a;
     }
 
-    .control:active {
-      background: #5b4518;
-      transform: scale(.96);
+    .direction-button:active,
+    .action-button:active,
+    .icon-button:active {
+      transform: scale(0.96);
+      background: #30230c;
     }
 
-    .up { grid-column: 2; grid-row: 1; }
-    .left { grid-column: 1; grid-row: 2; }
-    .down { grid-column: 2; grid-row: 2; }
-    .right { grid-column: 3; grid-row: 2; }
+    #moveUp {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    #moveLeft {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    #moveDown {
+      grid-column: 2;
+      grid-row: 2;
+    }
+
+    #moveRight {
+      grid-column: 3;
+      grid-row: 2;
+    }
 
     .actions {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
     }
 
-    .action {
-      min-height: 42px;
-      flex: 1;
-      max-width: 210px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: var(--panel);
-      color: var(--bright);
-      font-size: 12px;
-      cursor: pointer;
+    .action-button {
+      min-height: 47px;
+      padding: 10px;
+      font-size: 14px;
+      font-weight: 650;
     }
 
     .footer {
       margin-top: auto;
-      padding-top: 6px;
-      text-align: center;
-      color: #625d51;
+      padding-top: 5px;
+      color: #756b55;
       font-size: 11px;
-      direction: ltr;
+      text-align: center;
     }
 
-    dialog {
-      width: min(88%, 360px);
-      color: #f8f4e9;
-      background: #111;
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 22px;
-    }
+    @media (max-height: 700px) {
+      .app {
+        gap: 9px;
+      }
 
-    dialog::backdrop {
-      background: #000c;
-    }
+      .brand img {
+        width: 40px;
+        height: 40px;
+      }
 
-    dialog h2 {
-      color: var(--bright);
-      font-size: 18px;
-    }
+      .game-frame {
+        height: 38vh;
+        min-height: 250px;
+      }
 
-    dialog p {
-      color: #b7b0a1;
-      font-size: 13px;
-      line-height: 1.9;
-    }
-
-    @media (max-height: 720px) {
-      .app { gap: 11px; }
-      .brand img { width: 43px; height: 43px; }
-      .scene { max-height: 36dvh; min-height: 220px; }
-      .stat { padding: 8px; }
+      .controls {
+        grid-template-rows: repeat(2, 46px);
+      }
     }
 
     @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
+      *,
+      *::before,
+      *::after {
         scroll-behavior: auto !important;
       }
     }
@@ -298,214 +265,213 @@
 
 <body>
   <main class="app">
-    <header class="topbar">
+    <header class="header">
       <div class="brand">
-        <img src="192.png" alt="DrDer-light">
+        <img src="./192.png" alt="DrDer-light">
         <div>
           <h1>DrDer-light</h1>
-          <p>BEYOND THE LIGHT</p>
+          <p>اجمع البلورات وافتح البوابة</p>
         </div>
       </div>
-      <button class="icon-button" id="helpButton"
-              type="button" aria-label="تعليمات اللعبة">?</button>
+
+      <button class="icon-button" id="pauseButton"
+        type="button" aria-label="إيقاف اللعبة مؤقتًا"
+        title="إيقاف مؤقت">Ⅱ</button>
     </header>
 
     <section class="stats" aria-label="إحصائيات المرحلة">
       <div class="stat">
-        <div class="stat-label">المرحلة</div>
-        <div class="stat-value" id="levelValue">01</div>
+        <span class="stat-label">المرحلة</span>
+        <span class="stat-value" id="levelValue">1</span>
       </div>
       <div class="stat">
-        <div class="stat-label">البلورات</div>
-        <div class="stat-value" id="crystalValue">0 / 2</div>
+        <span class="stat-label">الحركات</span>
+        <span class="stat-value" id="movesValue">0</span>
       </div>
       <div class="stat">
-        <div class="stat-label">الوقت</div>
-        <div class="stat-value" id="timeValue">00:00</div>
+        <span class="stat-label">البلورات</span>
+        <span class="stat-value" id="crystalsValue">0/2</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">الوقت</span>
+        <span class="stat-value" id="timeValue">00:00</span>
       </div>
     </section>
 
-    <section class="game-heading">
-      <h2>المتاهة الذهبية</h2>
-      <span class="level-tag" id="statusTag">البوابة مغلقة</span>
+    <section class="game-frame" aria-label="لوحة المتاهة">
+      <canvas id="gameCanvas">
+        متصفحك لا يدعم عرض اللعبة.
+      </canvas>
     </section>
 
-    <section class="scene" id="gameScene"
-             aria-label="ساحة المتاهة">
-      <canvas id="gameCanvas" tabindex="0"
-              aria-label="متاهة ثلاثية الأبعاد. استخدم الأسهم للتحرك."></canvas>
-      <div class="scene-hint" id="sceneHint">
-        اسحب باتجاه الحركة أو استخدم أزرار الاتجاهات
-      </div>
+    <p class="game-caption">
+      حرّك الكرة الذهبية عبر الممرات، واجمع البلورتين ثم ادخل البوابة المضيئة.
+      يمكنك السحب على اللوحة أو استخدام أزرار الاتجاهات.
+    </p>
+
+    <section class="controls" aria-label="أزرار الحركة">
+      <button class="direction-button" id="moveUp"
+        type="button" aria-label="تحرك للأعلى">↑</button>
+      <button class="direction-button" id="moveLeft"
+        type="button" aria-label="تحرك لليسار">←</button>
+      <button class="direction-button" id="moveDown"
+        type="button" aria-label="تحرك للأسفل">↓</button>
+      <button class="direction-button" id="moveRight"
+        type="button" aria-label="تحرك لليمين">→</button>
     </section>
 
-    <div class="message" id="gameMessage" aria-live="polite">
-      اجمع البلورات الذهبية للوصول إلى البوابة
-    </div>
-
-    <nav class="controls" aria-label="أزرار الحركة">
-      <button class="control up" data-direction="up"
-              type="button" aria-label="أعلى">↑</button>
-      <button class="control left" data-direction="left"
-              type="button" aria-label="يسار">←</button>
-      <button class="control down" data-direction="down"
-              type="button" aria-label="أسفل">↓</button>
-      <button class="control right" data-direction="right"
-              type="button" aria-label="يمين">→</button>
-    </nav>
-
-    <div class="actions">
-      <button class="action" id="restartButton" type="button">
+    <section class="actions">
+      <button class="action-button" id="restartButton" type="button">
         ↻ إعادة المرحلة
       </button>
-      <button class="action" id="pauseButton" type="button">
-        Ⅱ إيقاف مؤقت
+      <button class="action-button" id="nextButton" type="button">
+        المرحلة التالية ›
       </button>
-    </div>
+    </section>
 
     <footer class="footer">
-      DRDER · LIGHT IS YOUR PATH
+      DrDer-light · متاهة الظلال الذهبية
     </footer>
   </main>
 
-  <dialog id="helpDialog">
-    <h2>كيف تلعب؟</h2>
-    <p>
-      حرّك الكرة الذهبية بالسحب على المتاهة أو باستخدام أزرار الاتجاهات.
-      اجمع البلورات، وتجنب الكتل المرتفعة والطرق المسدودة، ثم اعثر على
-      البوابة المضيئة.
-    </p>
-    <p>
-      يمكنك أيضًا استخدام أسهم لوحة المفاتيح على الكمبيوتر.
-      تفاصيل الحركة والمراحل ستُفعّل بواسطة محرك اللعبة.
-    </p>
-    <button class="action" id="closeHelpButton" type="button">
-      إغلاق
-    </button>
-  </dialog>
-
   <script>
     (() => {
-      const canvas = document.getElementById("gameCanvas");
-      const scene = document.getElementById("gameScene");
-      const ctx = canvas.getContext("2d");
+      'use strict';
+
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+
+      const app = {
+        canvas,
+        ctx,
+        resizeCanvas,
+        updateStats
+      };
+
+      window.DrDerLight = app;
 
       function resizeCanvas() {
-        const rect = scene.getBoundingClientRect();
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        canvas.width = Math.round(rect.width * dpr);
-        canvas.height = Math.round(rect.height * dpr);
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const rect = canvas.getBoundingClientRect();
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+
+        canvas.width = Math.max(1, Math.round(rect.width * ratio));
+        canvas.height = Math.max(1, Math.round(rect.height * ratio));
+
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+        /*
+         * Keep logical dimensions in CSS pixels for the renderer.
+         */
+        canvas.width = Math.max(1, Math.round(rect.width));
+        canvas.height = Math.max(1, Math.round(rect.height));
       }
 
-      const observer = new ResizeObserver(resizeCanvas);
-      observer.observe(scene);
-      resizeCanvas();
+      function updateStats(stats) {
+        if (!stats) return;
 
-      const help = document.getElementById("helpDialog");
+        document.getElementById('levelValue').textContent =
+          String(stats.level ?? 1);
+        document.getElementById('movesValue').textContent =
+          String(stats.moves ?? 0);
+        document.getElementById('crystalsValue').textContent =
+          `${stats.collected ?? 0}/${stats.crystals ?? 2}`;
 
-      document.getElementById("helpButton").addEventListener("click", () => {
-        help.showModal();
-      });
+        const total = Math.floor(stats.time ?? 0);
+        const minutes = Math.floor(total / 60);
+        const seconds = total % 60;
 
-      document.getElementById("closeHelpButton").addEventListener("click", () => {
-        help.close();
-      });
+        document.getElementById('timeValue').textContent =
+          `${String(minutes).padStart(2, '0')}:` +
+          `${String(seconds).padStart(2, '0')}`;
 
-      document.getElementById("restartButton").addEventListener("click", () => {
-        document.dispatchEvent(new CustomEvent("drder:restart"));
-      });
+        document.getElementById('pauseButton').textContent =
+          stats.paused ? '▶' : 'Ⅱ';
+      }
 
-      document.getElementById("pauseButton").addEventListener("click", () => {
-        document.dispatchEvent(new CustomEvent("drder:pause"));
-      });
+      function sendMove(direction) {
+        document.dispatchEvent(new CustomEvent('drder:move', {
+          detail: { direction }
+        }));
+      }
 
-      document.querySelectorAll("[data-direction]").forEach(button => {
-        button.addEventListener("click", () => {
-          document.dispatchEvent(new CustomEvent("drder:move", {
-            detail: { direction: button.dataset.direction }
-          }));
+      const buttons = {
+        moveUp: 'up',
+        moveDown: 'down',
+        moveLeft: 'left',
+        moveRight: 'right'
+      };
+
+      Object.entries(buttons).forEach(([id, direction]) => {
+        document.getElementById(id).addEventListener('click', () => {
+          sendMove(direction);
         });
       });
 
-      const keyMap = {
-        ArrowUp: "up",
-        ArrowDown: "down",
-        ArrowLeft: "left",
-        ArrowRight: "right",
-        w: "up",
-        s: "down",
-        a: "left",
-        d: "right"
-      };
+      document.getElementById('restartButton').addEventListener('click', () => {
+        document.dispatchEvent(new Event('drder:restart'));
+      });
 
-      window.addEventListener("keydown", event => {
-        const direction = keyMap[event.key];
-        if (!direction || help.open) return;
-        event.preventDefault();
-        document.dispatchEvent(new CustomEvent("drder:move", {
-          detail: { direction }
-        }));
+      document.getElementById('pauseButton').addEventListener('click', () => {
+        document.dispatchEvent(new Event('drder:pause'));
+      });
+
+      document.getElementById('nextButton').addEventListener('click', () => {
+        document.dispatchEvent(new Event('drder:next'));
       });
 
       let startX = 0;
       let startY = 0;
 
-      canvas.addEventListener("pointerdown", event => {
+      canvas.addEventListener('pointerdown', event => {
         startX = event.clientX;
         startY = event.clientY;
-        canvas.setPointerCapture(event.pointerId);
       });
 
-      canvas.addEventListener("pointerup", event => {
+      canvas.addEventListener('pointerup', event => {
         const dx = event.clientX - startX;
         const dy = event.clientY - startY;
 
-        if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 22) return;
 
-        let direction;
         if (Math.abs(dx) > Math.abs(dy)) {
-          direction = dx > 0 ? "right" : "left";
+          sendMove(dx > 0 ? 'right' : 'left');
         } else {
-          direction = dy > 0 ? "down" : "up";
+          sendMove(dy > 0 ? 'down' : 'up');
         }
-
-        document.dispatchEvent(new CustomEvent("drder:move", {
-          detail: { direction }
-        }));
       });
 
-      /*
-       * واجهة الربط للمحرك القادم.
-       * سيقوم engine.js بتسجيل مستمعي الأحداث drder:move
-       * وdrder:restart وdrder:pause، ثم يرسم المتاهة على canvas.
-       */
+      function fitCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = Math.max(1, Math.round(rect.width));
+        canvas.height = Math.max(1, Math.round(rect.height));
+      }
 
-      window.DrDerLight = {
-        canvas,
-        ctx,
-        scene,
-        resizeCanvas,
-        updateStats({ level, crystals, totalCrystals, time, status, message }) {
-          if (level !== undefined) {
-            document.getElementById("levelValue").textContent =
-              String(level).padStart(2, "0");
-          }
-          if (crystals !== undefined && totalCrystals !== undefined) {
-            document.getElementById("crystalValue").textContent =
-              `${crystals} / ${totalCrystals}`;
-          }
-          if (time !== undefined) {
-            document.getElementById("timeValue").textContent = time;
-          }
-          if (status !== undefined) {
-            document.getElementById("statusTag").textContent = status;
-          }
-          if (message !== undefined) {
-            document.getElementById("gameMessage").textContent = message;
-          }
-        }
+      window.addEventListener('resize', fitCanvas);
+      window.addEventListener('orientationchange', fitCanvas);
+
+      fitCanvas();
+
+      /*
+       * Load the game engine only after the interface is ready.
+       * This does not register or enable a Service Worker.
+       */
+      const engine = document.createElement('script');
+      engine.src = './engine.js';
+      engine.async = false;
+      engine.onerror = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#080808';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#ffdf79';
+        ctx.font = '16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(
+          'تعذّر تحميل engine.js',
+          canvas.width / 2,
+          canvas.height / 2
+        );
       };
+      document.body.appendChild(engine);
     })();
   </script>
 </body>
