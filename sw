@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'drder-light-v2';
+const CACHE_NAME = 'drder-light-v3';
 
 const APP_FILES = [
   './',
@@ -9,7 +9,9 @@ const APP_FILES = [
   './engine.js',
   './manifest.json',
   './192.png',
-  './512.png'
+  './512.png',
+  './walk.mp3',
+  './Door.mp3'
 ];
 
 self.addEventListener('install', (event) => {
@@ -37,11 +39,9 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
-
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
@@ -53,24 +53,17 @@ self.addEventListener('fetch', (event) => {
           if (!response || !response.ok || response.type !== 'basic') {
             return response;
           }
-
           const copy = response.clone();
-
           caches.open(CACHE_NAME)
             .then((cache) => cache.put(request, copy))
             .catch(() => {});
-
           return response;
         })
         .catch(() => {
           if (request.mode === 'navigate') {
             return caches.match('./index.html');
           }
-
-          return new Response('', {
-            status: 503,
-            statusText: 'Offline'
-          });
+          return new Response('', { status: 503, statusText: 'Offline' });
         });
     })
   );
