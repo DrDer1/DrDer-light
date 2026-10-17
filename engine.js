@@ -1,5 +1,5 @@
 /* DrDer-Light — engine.js
-   متاهة حقيقية بـ Raycasting. جدران صلبة، منظور أول-شخص، كرة على الأرض.
+   متاهة حقيقية بـ Raycasting مع تصحيح زوايا Canvas.
 */
 (() => {
   'use strict';
@@ -8,13 +8,10 @@
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const SAVE_KEY = 'drder-light-save-v5';
+  const SAVE_KEY = 'drder-light-save-v6';
   const CRYSTAL_COUNT = 2;
-
-  // أبعاد المتاهة (فردية لتعمل خوارزمية DFS)
   const MAZE_W = 15;
   const MAZE_H = 51;
-
   const GOLD = '#f4cf63';
   const GOLD_LIGHT = '#fff0a0';
 
@@ -32,12 +29,8 @@
   let lastFrame = 0;
   let lastTick = 0;
 
-  // اللاعب (إحداثيات حقيقية في المتاهة)
-  let player = { x: 1.5, y: 1.5, angle: 0 };
-  let visualX = 1.5;
-  let visualY = 1.5;
-  let visualAngle = 0;
-
+  // اللاعب
+  let player = { x: 1.5, y: 1.5, angle: 0 }; // angle = 0 يعني النظر للأسفل (جنوباً)
   let maze = [];
   let crystalsPos = [];
   let portalPos = { x: 1.5, y: 1.5 };
@@ -46,12 +39,6 @@
 
   const $ = id => document.getElementById(id);
 
-  function makeRng(seed) {
-    let s = (seed >>> 0) || 1;
-    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
-  }
-
-  /* ============ توليد متاهة DFS مضمونة الحل ============ */
   function generateMaze() {
     maze = Array.from({ length: MAZE_H }, () => Array(MAZE_W).fill(1));
 
@@ -69,32 +56,30 @@
         .filter(p => p.x > 0 && p.x < MAZE_W - 1 && p.y > 0 && p.y < MAZE_H - 1 && maze[p.y][p.x] === 1);
 
       if (!opts.length) { stack.pop(); continue; }
-
       const nxt = opts[Math.floor(Math.random() * opts.length)];
       maze[(cur.y + nxt.y) / 2][(cur.x + nxt.x) / 2] = 0;
       maze[nxt.y][nxt.x] = 0;
       stack.push(nxt);
     }
 
-    // فتح ممرات أفقية عشوائية لربط المسارات (كما طلبت 7 مسارات)
+    // فتح ممرات أفقية لإنشاء 7 مسارات
     for (let y = 3; y < MAZE_H - 3; y += 4) {
       for (let x = 1; x < MAZE_W - 1; x++) {
         if (Math.random() > 0.35) maze[y][x] = 0;
       }
     }
 
-    // البداية
+    // البداية: الكرة تنظر للأسفل (جنوباً)
     player = { x: 1.5, y: 1.5, angle: 0 };
-    visualX = 1.5; visualY = 1.5; visualAngle = 0;
     maze[1][1] = 0;
 
-    // البوابة في النهاية
-    portalPos = { x: MAZE_W - 1.5, y: MAZE_H - 1.5 };
+    // البوابة
+    portalPos = { x: MAZE_W - 2.5, y: MAZE_H - 2.5 };
     maze[MAZE_H - 2][MAZE_W - 2] = 0;
 
-    // البلورات على ممرات مضمونة
+    // البلورات
     crystalsPos = [];
-    const used = new Set(['1,1', (MAZE_W - 2) + ',' + (MAZE_H - 2)]);
+    const used = new Set(['1,1']);
     let tries = 0;
     while (crystalsPos.length < CRYSTAL_COUNT && tries < 500) {
       tries++;
@@ -108,7 +93,6 @@
     }
   }
 
-  /* ============ حفظ / تحميل ============ */
   function saveProgress() {
     try { localStorage.setItem(SAVE_KEY, JSON.stringify({ level, bestTimes, savedAt: Date.now() })); } catch (_) {}
   }
@@ -120,7 +104,6 @@
     } catch (_) { level = 1; bestTimes = {}; }
   }
 
-  /* ============ UI ============ */
   function formatTime(sec) {
     const t = Math.max(0, Math.floor(sec));
     return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
@@ -137,7 +120,6 @@
   }
   function say(text, dur = 1500) { message = text; messageUntil = performance.now() + dur; }
 
-  /* ============ صوت ============ */
   function tone(freq, dur, vol) {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -160,7 +142,6 @@
     block: () => tone(180, 0.08, 0.03)
   };
 
-  /* ============ Canvas ============ */
   function syncCanvas() {
     const rect = canvas.getBoundingClientRect();
     const w = Math.max(1, rect.width), h = Math.max(1, rect.height);
@@ -171,12 +152,11 @@
     return { w, h };
   }
 
-  /* ============ Raycasting Render ============ */
   function render(time) {
     const dims = syncCanvas();
     const { w, h } = dims;
 
-    // سقف وأرضية
+    // السماء والأرضية
     const sky = ctx.createLinearGradient(0, 0, 0, h * 0.5);
     sky.addColorStop(0, '#020202');
     sky.addColorStop(1, '#0a0805');
@@ -191,79 +171,132 @@
 
     // Raycasting
     const fov = Math.PI / 3;
-    const numRays = Math.min(w, 300);
+    const numRays = Math.min(w, 280);
     const rayStep = w / numRays;
+    const dirX = Math.cos(player.angle);
+    const dirY = Math.sin(player.angle);
+
+    // مستوى الكاميرا
+    const camX = -dirY * 0.66;
+    const camY = dirX * 0.66;
 
     for (let i = 0; i < numRays; i++) {
       const screenX = i * rayStep;
-      const rayAngle = visualAngle - fov / 2 + (i / numRays) * fov;
-      const sin = Math.sin(rayAngle), cos = Math.cos(rayAngle);
+      // نسبة من -1 إلى 1
+      const cameraRatio = 2 * i / numRays - 1;
 
-      let rayX = visualX, rayY = visualY;
-      let hit = false, side = 0, distance = 0;
-      const step = 0.04, maxDist = 25;
+      const rayDirX = dirX + camX * cameraRatio;
+      const rayDirY = dirY + camY * cameraRatio;
 
-      while (!hit && distance < maxDist) {
-        rayX += cos * step;
-        rayY += sin * step;
-        distance += step;
-        const mx = Math.floor(rayX), my = Math.floor(rayY);
-        if (mx < 0 || mx >= MAZE_W || my < 0 || my >= MAZE_H) { hit = true; break; }
-        if (maze[my][mx] === 1) { hit = true; side = Math.abs(cos) > Math.abs(sin) ? 0 : 1; }
+      // DDA
+      let mapX = Math.floor(player.x);
+      let mapY = Math.floor(player.y);
+
+      const deltaDistX = Math.abs(1 / (rayDirX || 0.0001));
+      const deltaDistY = Math.abs(1 / (rayDirY || 0.0001));
+
+      let stepX, stepY, sideDistX, sideDistY;
+      if (rayDirX < 0) { stepX = -1; sideDistX = (player.x - mapX) * deltaDistX; }
+      else { stepX = 1; sideDistX = (mapX + 1 - player.x) * deltaDistX; }
+
+      if (rayDirY < 0) { stepY = -1; sideDistY = (player.y - mapY) * deltaDistY; }
+      else { stepY = 1; sideDistY = (mapY + 1 - player.y) * deltaDistY; }
+
+      let hit = 0, side = 0;
+      let iterations = 0;
+      while (!hit && iterations < 50) {
+        iterations++;
+        if (sideDistX < sideDistY) {
+          sideDistX += deltaDistX;
+          mapX += stepX;
+          side = 0;
+        } else {
+          sideDistY += deltaDistY;
+          mapY += stepY;
+          side = 1;
+        }
+        if (mapX < 0 || mapX >= MAZE_W || mapY < 0 || mapY >= MAZE_H) { hit = 1; break; }
+        if (maze[mapY][mapX] === 1) hit = 1;
       }
-      if (!hit) continue;
 
-      const corrected = distance * Math.cos(rayAngle - visualAngle);
-      const wallH = (h / corrected) * 0.85;
+      let perpWallDist;
+      if (side === 0) perpWallDist = (sideDistX - deltaDistX);
+      else perpWallDist = (sideDistY - deltaDistY);
+      if (perpWallDist < 0.01) perpWallDist = 0.01;
 
-      // جدار أسود واضح: الجانب الأفقي أغمق قليلاً
-      ctx.fillStyle = side === 0 ? '#0a0a0a' : '#050505';
-      const top = (h - wallH) / 2;
-      ctx.fillRect(screenX, top, rayStep + 1, wallH);
+      const wallH = Math.floor((h / perpWallDist) * 0.75);
+      let drawStart = Math.floor(-wallH / 2 + h / 2);
+      let drawEnd = Math.floor(wallH / 2 + h / 2);
+      if (drawStart < 0) drawStart = 0;
+      if (drawEnd > h) drawEnd = h;
 
-      // حافة ذهبية رفيعة أعلى الجدار
-      ctx.fillStyle = 'rgba(233,184,63,0.25)';
-      ctx.fillRect(screenX, top, rayStep + 1, Math.max(1, wallH * 0.015));
+      // ألوان الجدران: رمادي داكن جداً (أسود تقريباً) مع تظليل
+      let color;
+      if (side === 0) color = `rgb(15, 15, 15)`;
+      else color = `rgb(8, 8, 8)`;
+
+      // إضاءة حسب المسافة (اختياري)
+      const shade = Math.min(1, 3 / perpWallDist);
+      const r = Math.floor(10 * shade);
+      const g = Math.floor(10 * shade);
+      const b = Math.floor(10 * shade);
+      
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.fillRect(screenX, drawStart, rayStep + 1, drawEnd - drawStart);
+
+      // خط ذهبي رفيع على حافة الجدار العلوية
+      if (wallH > 5) {
+        ctx.fillStyle = 'rgba(233,184,63,0.15)';
+        ctx.fillRect(screenX, drawStart, rayStep + 1, Math.max(1, wallH * 0.01));
+      }
     }
 
     // رسم البلورات
     crystalsPos.forEach(c => {
       if (c.collected) return;
-      const dx = c.x - visualX, dy = c.y - visualY;
+      const dx = c.x - player.x, dy = c.y - player.y;
       const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist > 14) return;
-      let diff = Math.atan2(dy, dx) - visualAngle;
+
+      // الزاوية النسبية للكرة
+      const angleToCrystal = Math.atan2(dy, dx);
+      let diff = angleToCrystal - player.angle;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
-      if (Math.abs(diff) < fov / 2) {
-        const sx = w / 2 + (diff / (fov / 2)) * (w / 2);
-        const size = Math.max(4, 45 / dist);
+
+      if (Math.abs(diff) < fov / 2 && dist > 0.2) {
+        const screenX = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
+        if (screenX < 0 || screenX > w) return;
+        const size = Math.max(2, 30 / dist);
+        const yPos = h / 2; // في الأفق
         ctx.save();
         ctx.shadowColor = GOLD; ctx.shadowBlur = 18;
         ctx.fillStyle = GOLD;
-        ctx.beginPath(); ctx.arc(sx, h / 2, size, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(screenX, yPos, size, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
       }
     });
 
     // رسم البوابة
-    const pdx = portalPos.x - visualX, pdy = portalPos.y - visualY;
+    const pdx = portalPos.x - player.x, pdy = portalPos.y - player.y;
     const pdist = Math.sqrt(pdx*pdx + pdy*pdy);
-    if (pdist < 16) {
-      let diff = Math.atan2(pdy, pdx) - visualAngle;
+    if (pdist > 0.2) {
+      let diff = Math.atan2(pdy, pdx) - player.angle;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
+      
       if (Math.abs(diff) < fov / 2) {
-        const sx = w / 2 + (diff / (fov / 2)) * (w / 2);
-        const size = Math.max(6, 70 / pdist);
-        ctx.save();
-        ctx.shadowColor = GOLD; ctx.shadowBlur = 22;
-        ctx.strokeStyle = GOLD;
-        ctx.lineWidth = Math.max(2, 5 / pdist * 4);
-        ctx.beginPath();
-        ctx.ellipse(sx, h / 2, size * 0.5, size, 0, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
+        const sx = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
+        if (sx >= 0 && sx <= w) {
+          const size = Math.max(4, 50 / pdist);
+          ctx.save();
+          ctx.shadowColor = GOLD; ctx.shadowBlur = 22;
+          ctx.strokeStyle = GOLD;
+          ctx.lineWidth = Math.max(2, 4 / pdist * 4);
+          ctx.beginPath();
+          ctx.ellipse(sx, h / 2, size * 0.5, size, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
     }
 
@@ -332,7 +365,6 @@
     }
   }
 
-  /* ============ منطق الحركة ============ */
   function canMove(nx, ny) {
     const margin = 0.2;
     if (nx < margin || nx > MAZE_W - margin || ny < margin || ny > MAZE_H - margin) return false;
@@ -343,18 +375,19 @@
 
   function move(direction) {
     if (paused || won) return;
-    const speed = 0.3;
-    let dx = 0, dy = 0;
+    const speed = 0.25;
+    const dirX = Math.cos(player.angle);
+    const dirY = Math.sin(player.angle);
 
-    if (direction === 'up') { dx = Math.cos(visualAngle) * speed; dy = Math.sin(visualAngle) * speed; }
-    else if (direction === 'down') { dx = -Math.cos(visualAngle) * speed; dy = -Math.sin(visualAngle) * speed; }
-    else if (direction === 'left') { visualAngle -= 0.15; return; }
-    else if (direction === 'right') { visualAngle += 0.15; return; }
+    let dx = 0, dy = 0;
+    if (direction === 'up') { dx = dirX * speed; dy = dirY * speed; }
+    else if (direction === 'down') { dx = -dirX * speed; dy = -dirY * speed; }
+    else if (direction === 'left') { player.angle -= 0.15; return; }
+    else if (direction === 'right') { player.angle += 0.15; return; }
     else return;
 
-    if (canMove(visualX + dx, visualY + dy)) {
-      visualX += dx; visualY += dy;
-      player.x = visualX; player.y = visualY; player.angle = visualAngle;
+    if (canMove(player.x + dx, player.y + dy)) {
+      player.x += dx; player.y += dy;
       moves++;
       sound.move();
       checkCollect();
@@ -370,7 +403,7 @@
     crystalsPos.forEach(c => {
       if (c.collected) return;
       const dx = c.x - player.x, dy = c.y - player.y;
-      if (Math.sqrt(dx*dx + dy*dy) < 0.7) {
+      if (Math.sqrt(dx*dx + dy*dy) < 0.6) {
         c.collected = true; crystals++;
         sound.crystal(); say('تم جمع البلورة الذهبية!');
         updateStats();
@@ -391,7 +424,6 @@
     saveProgress(); sound.win(); updateStats();
   }
 
-  /* ============ إعادة / تالي / إيقاف ============ */
   function restartLevel() {
     if (won && !confirm('سيتم فقدان نتيجة المرحلة الحالية. متابعة؟')) return;
     moves = 0; crystals = 0; elapsed = 0; paused = false; won = false; success = false; message = '';
@@ -399,7 +431,7 @@
   }
 
   function nextLevel() {
-    if (!won) { say('أكمل المرحلة أولًا'); return; }
+    if (!won) { say('أكمل المرحلة أولاً'); return; }
     level++; saveProgress();
     moves = 0; crystals = 0; elapsed = 0; paused = false; won = false; success = false; message = '';
     generateMaze(); say('المرحلة ' + level); updateStats();
@@ -412,7 +444,6 @@
     updateStats();
   }
 
-  /* ============ الإدخال ============ */
   function onPointerDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     pointerStart = { x: e.clientX, y: e.clientY, time: performance.now(), id: e.pointerId };
@@ -437,7 +468,6 @@
     if (e.key === 'Escape' || e.key === ' ') { e.preventDefault(); togglePause(); }
   }
 
-  /* ============ حلقة الرسم ============ */
   function frame(time) {
     animationId = requestAnimationFrame(frame);
     if (!lastFrame) lastFrame = time;
@@ -462,7 +492,6 @@
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', () => { pointerStart = null; });
   document.addEventListener('keydown', onKeyDown);
-  document.addEventListener('drder:move', e => { if (e.detail && e.detail.direction) move(e.detail.direction); });
   document.addEventListener('drder:restart', restartLevel);
   document.addEventListener('drder:pause', togglePause);
   document.addEventListener('drder:next', nextLevel);
@@ -476,15 +505,6 @@
 
   cancelAnimationFrame(animationId);
   animationId = requestAnimationFrame(frame);
-
-  window.DrDerLight = {
-    getGameState: () => ({
-      level, moves, crystals, won, paused,
-      elapsed: Math.round(elapsed * 10) / 10,
-      player: { x: player.x, y: player.y, angle: player.angle },
-      mazeSize: { w: MAZE_W, h: MAZE_H }
-    })
-  };
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
