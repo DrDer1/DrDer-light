@@ -1,5 +1,5 @@
 /* DrDer-Light — engine.js
-   متاهة Raycasting، مفاتيح، أبواب، عصا تحكم افتراضية، مراحل لا نهائية، مسارات خادعة.
+   متاهة Raycasting، مفاتيح، أبواب، عصا تحكم افتراضية، مراحل لا نهائية، مسارات خادعة، حفر وأشواك.
 */
 (() => {
   'use strict';
@@ -8,12 +8,13 @@
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const SAVE_KEY = 'drder-light-save-v8';
+  const SAVE_KEY = 'drder-light-save-v9';
   const CRYSTAL_COUNT = 2;
   const MAZE_W = 21;
   const MAZE_H = 51;
   const GOLD = '#f4cf63';
   const GOLD_LIGHT = '#fff0a0';
+  const RED = '#ff4444';
 
   let level = 1;
   let bestTimes = {};
@@ -23,6 +24,7 @@
   let paused = false;
   let won = false;
   let success = false;
+  let dead = false;
   let message = '';
   let messageUntil = 0;
   let animationId = 0;
@@ -32,32 +34,37 @@
   let maze = [];
   let crystalsPos = [];
   let portalPos = { x: 1.5, y: 1.5 };
+  let spikes = [];
+  let decoySigns = [];
 
   // Virtual joystick
   let joystickActive = false;
-  let joystickStartX = 0;
-  let joystickStartY = 0;
+  let joystickBaseX = 0;
+  let joystickBaseY = 0;
   let joystickCurrentX = 0;
   let joystickCurrentY = 0;
   let joystickPointerId = null;
   const JOYSTICK_RADIUS = 60;
   const JOYSTICK_DEADZONE = 10;
 
-  // Movement state (continuous)
-  let moveForward = 0;   // -1 to 1
-  let moveSide = 0;      // -1 to 1
+  // Movement state
+  let moveForward = 0;
+  let moveSide = 0;
   let rotateSpeed = 0;
 
   // Audio
   let audioCtx = null;
   let walkAudio = null;
   let doorAudio = null;
+  let hurtAudio = null;
   let isWalking = false;
 
   const $ = id => document.getElementById(id);
 
   function generateMaze() {
     maze = Array.from({ length: MAZE_H }, () => Array(MAZE_W).fill(1));
+    spikes = [];
+    decoySigns = [];
 
     const stack = [{ x: 1, y: 1 }];
     maze[1][1] = 0;
@@ -96,6 +103,28 @@
         if (nx > 0 && nx < MAZE_W - 1 && ny > 0 && ny < MAZE_H - 1) {
           maze[ny][nx] = 0;
         }
+      }
+    }
+
+    // إضافة حفر الأشواك
+    for (let i = 0; i < 12; i++) {
+      const sx = 3 + Math.floor(Math.random() * (MAZE_W - 6));
+      const sy = 5 + Math.floor(Math.random() * (MAZE_H - 10));
+      if (maze[sy][sx] === 0 && !(sx < 4 && sy < 4)) {
+        spikes.push({ x: sx + 0.5, y: sy + 0.5 });
+      }
+    }
+
+    // إضافة أسهم خادعة
+    for (let i = 0; i < 10; i++) {
+      const sx = 3 + Math.floor(Math.random() * (MAZE_W - 6));
+      const sy = 5 + Math.floor(Math.random() * (MAZE_H - 10));
+      if (maze[sy][sx] === 0) {
+        decoySigns.push({ 
+          x: sx + 0.5, 
+          y: sy + 0.5, 
+          angle: Math.floor(Math.random() * 4) * (Math.PI / 2) 
+        });
       }
     }
 
@@ -161,6 +190,8 @@
       walkAudio.preload = 'auto';
       doorAudio = new Audio('./Door.mp3');
       doorAudio.preload = 'auto';
+      hurtAudio = new Audio('./hurt.mp3');
+      hurtAudio.preload = 'auto';
     } catch (_) {}
   }
 
@@ -182,6 +213,15 @@
     if (!doorAudio) return;
     doorAudio.currentTime = 0;
     doorAudio.play().catch(() => {});
+  }
+
+  function playHurtSound() {
+    if (hurtAudio) {
+      hurtAudio.currentTime = 0;
+      hurtAudio.play().catch(() => {});
+    } else {
+      tone(100, 0.4, 0.1);
+    }
   }
 
   function tone(freq, dur, vol) {
@@ -294,6 +334,69 @@
       }
     }
 
+    // رسم الحفر (الأشواك)
+    spikes.forEach(s => {
+      const dx = s.x - player.x, dy = s.y - player.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      let diff = Math.atan2(dy, dx) - player.angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+
+      if (Math.abs(diff) < fov / 2 && dist > 0.2) {
+        const screenX = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
+        if (screenX >= 0 && screenX <= w) {
+          const size = Math.max(4, 25 / dist);
+          const yPos = h / 2 + (h / dist) * 0.15; 
+          ctx.save();
+          ctx.fillStyle = '#111';
+          ctx.beginPath();
+          ctx.ellipse(screenX, yPos, size * 1.5, size * 0.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#555';
+          for (let i = -1; i <= 1; i++) {
+            ctx.beginPath();
+            ctx.moveTo(screenX + i * size * 0.6, yPos);
+            ctx.lineTo(screenX + i * size * 0.3, yPos - size);
+            ctx.lineTo(screenX + i * size * 0.6 + size * 0.2, yPos);
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+      }
+    });
+
+    // رسم الأسهم الخادعة
+    decoySigns.forEach(s => {
+      const dx = s.x - player.x, dy = s.y - player.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      let diff = Math.atan2(dy, dx) - player.angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+
+      if (Math.abs(diff) < fov / 2 && dist > 0.2) {
+        const screenX = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
+        if (screenX >= 0 && screenX <= w) {
+          const size = Math.max(5, 35 / dist);
+          const yPos = h / 2 - size * 0.5;
+          ctx.save();
+          ctx.translate(screenX, yPos);
+          ctx.rotate(s.angle - player.angle);
+          ctx.fillStyle = 'rgba(233, 184, 63, 0.4)';
+          ctx.beginPath();
+          ctx.moveTo(0, -size);
+          ctx.lineTo(size * 0.6, 0);
+          ctx.lineTo(size * 0.2, 0);
+          ctx.lineTo(size * 0.2, size);
+          ctx.lineTo(-size * 0.2, size);
+          ctx.lineTo(-size * 0.2, 0);
+          ctx.lineTo(-size * 0.6, 0);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+    });
+
+    // رسم المفاتيح
     crystalsPos.forEach(c => {
       if (c.collected) return;
       const dx = c.x - player.x, dy = c.y - player.y;
@@ -322,6 +425,7 @@
       }
     });
 
+    // رسم البوابة
     const pdx = portalPos.x - player.x, pdy = portalPos.y - player.y;
     const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
     if (pdist > 0.2) {
@@ -347,14 +451,6 @@
           ctx.fill();
           ctx.strokeStyle = GOLD;
           ctx.lineWidth = Math.max(2, 3 / pdist * 4);
-          ctx.stroke();
-          ctx.strokeStyle = 'rgba(255,226,130,0.6)';
-          ctx.lineWidth = Math.max(1, 1.5 / pdist * 4);
-          ctx.beginPath();
-          ctx.moveTo(sx - doorW / 2 + 3, h / 2 + doorH / 2 - 3);
-          ctx.lineTo(sx - doorW / 2 + 3, h / 2 - doorH / 2 + 3);
-          ctx.quadraticCurveTo(sx, h / 2 - doorH / 2 - doorW * 0.4 + 3, sx + doorW / 2 - 3, h / 2 - doorH / 2 + 3);
-          ctx.lineTo(sx + doorW / 2 - 3, h / 2 + doorH / 2 - 3);
           ctx.stroke();
           ctx.fillStyle = GOLD;
           ctx.beginPath();
@@ -386,32 +482,30 @@
 
   function drawJoystick(w, h) {
     if (!joystickActive) return;
-    const baseX = w * 0.5;
-    const baseY = h * 0.82;
 
     ctx.save();
     ctx.strokeStyle = 'rgba(233,184,63,0.4)';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(baseX, baseY, JOYSTICK_RADIUS, 0, Math.PI * 2);
+    ctx.arc(joystickBaseX, joystickBaseY, JOYSTICK_RADIUS, 0, Math.PI * 2);
     ctx.stroke();
 
-    const grad = ctx.createRadialGradient(baseX, baseY, 5, baseX, baseY, JOYSTICK_RADIUS);
+    const grad = ctx.createRadialGradient(joystickBaseX, joystickBaseY, 5, joystickBaseX, joystickBaseY, JOYSTICK_RADIUS);
     grad.addColorStop(0, 'rgba(233,184,63,0.15)');
     grad.addColorStop(1, 'rgba(233,184,63,0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.arc(baseX, baseY, JOYSTICK_RADIUS, 0, Math.PI * 2);
+    ctx.arc(joystickBaseX, joystickBaseY, JOYSTICK_RADIUS, 0, Math.PI * 2);
     ctx.fill();
 
     let knobX = joystickCurrentX;
     let knobY = joystickCurrentY;
-    const dx = knobX - joystickStartX;
-    const dy = knobY - joystickStartY;
+    const dx = knobX - joystickBaseX;
+    const dy = knobY - joystickBaseY;
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist > JOYSTICK_RADIUS) {
-      knobX = joystickStartX + (dx / dist) * JOYSTICK_RADIUS;
-      knobY = joystickStartY + (dy / dist) * JOYSTICK_RADIUS;
+      knobX = joystickBaseX + (dx / dist) * JOYSTICK_RADIUS;
+      knobY = joystickBaseY + (dy / dist) * JOYSTICK_RADIUS;
     }
 
     ctx.shadowColor = GOLD; ctx.shadowBlur = 12;
@@ -454,6 +548,16 @@
       ctx.fillText('اضغط زر التشغيل للاستئناف', w / 2, h * 0.55);
       ctx.restore();
     }
+    if (dead) {
+      ctx.fillStyle = 'rgba(80,0,0,0.7)'; ctx.fillRect(0, 0, w, h);
+      ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.shadowColor = RED; ctx.shadowBlur = 20; ctx.fillStyle = '#fff';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.fillText('لقد وقعت في الفخ!', w / 2, h * 0.45);
+      ctx.font = '16px sans-serif';
+      ctx.fillText('اضغط إعادة المحاولة', w / 2, h * 0.55);
+      ctx.restore();
+    }
     if (success) {
       ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(0, 0, w, h);
       ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -484,13 +588,12 @@
   }
 
   function updateMovement(dt) {
-    if (paused || won) {
+    if (paused || won || dead) {
       stopWalkSound();
       return;
     }
 
-    // تقليل السرعة لتصبح أكثر واقعية وأقل حدة
-    const speed = 1.2; 
+    const speed = 1.2;
     const rotSpeed = 1.2;
 
     let dx = 0, dy = 0;
@@ -522,6 +625,7 @@
         moves++;
         checkCollect();
         checkWin();
+        checkSpikes();
         startWalkSound();
       } else {
         sound.block();
@@ -530,6 +634,18 @@
     } else {
       stopWalkSound();
     }
+  }
+
+  function checkSpikes() {
+    if (dead) return;
+    spikes.forEach(s => {
+      const dx = s.x - player.x, dy = s.y - player.y;
+      if (Math.sqrt(dx * dx + dy * dy) < 0.5) {
+        dead = true;
+        stopWalkSound();
+        playHurtSound();
+      }
+    });
   }
 
   function checkCollect() {
@@ -562,7 +678,7 @@
 
   function restartLevel() {
     if (won && !confirm('سيتم فقدان نتيجة المرحلة الحالية. متابعة؟')) return;
-    moves = 0; crystals = 0; elapsed = 0; paused = false; won = false; success = false; message = '';
+    moves = 0; crystals = 0; elapsed = 0; paused = false; won = false; success = false; dead = false; message = '';
     stopWalkSound();
     generateMaze(); say('المرحلة ' + level); updateStats();
   }
@@ -570,13 +686,13 @@
   function nextLevel() {
     if (!won) { say('أكمل المرحلة أولاً'); return; }
     level++; saveProgress();
-    moves = 0; crystals = 0; elapsed = 0; paused = false; won = false; success = false; message = '';
+    moves = 0; crystals = 0; elapsed = 0; paused = false; won = false; success = false; dead = false; message = '';
     stopWalkSound();
     generateMaze(); say('المرحلة ' + level); updateStats();
   }
 
   function togglePause() {
-    if (won) return;
+    if (won || dead) return;
     paused = !paused;
     if (paused) stopWalkSound();
     say(paused ? 'تم إيقاف اللعبة' : 'استأنفت اللعب', 1100);
@@ -590,8 +706,10 @@
 
     joystickActive = true;
     joystickPointerId = e.pointerId;
-    joystickStartX = e.clientX;
-    joystickStartY = e.clientY;
+    
+    // تعيين قاعدة عصا التحكم أسفل إصبع اللاعب مباشرة
+    joystickBaseX = e.clientX;
+    joystickBaseY = e.clientY;
     joystickCurrentX = e.clientX;
     joystickCurrentY = e.clientY;
 
@@ -603,108 +721,6 @@
     joystickCurrentX = e.clientX;
     joystickCurrentY = e.clientY;
 
-    const dx = joystickCurrentX - joystickStartX;
-    const dy = joystickCurrentY - joystickStartY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist < JOYSTICK_DEADZONE) {
-      moveForward = 0;
-      moveSide = 0;
-      rotateSpeed = 0;
-      return;
-    }
-
-    const nx = dx / dist;
-    const ny = dy / dist;
-    const strength = Math.min(1, dist / JOYSTICK_RADIUS);
-
-    moveForward = -ny * strength;
-    moveSide = nx * strength;
-    
-    if (Math.abs(dx) > Math.abs(dy) * 1.5) {
-      rotateSpeed = nx * strength;
-    } else {
-      rotateSpeed = 0;
-    }
-  }
-
-  function onPointerUp(e) {
-    if (e.pointerId !== joystickPointerId) return;
-    joystickActive = false;
-    joystickPointerId = null;
-    moveForward = 0;
-    moveSide = 0;
-    rotateSpeed = 0;
-    stopWalkSound();
-  }
-
-  function onKeyDown(e) {
-    const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', a: 'left', d: 'right', w: 'up', s: 'down' };
-    const d = map[e.key];
-    if (d) {
-      e.preventDefault();
-      if (d === 'up') moveForward = 1;
-      else if (d === 'down') moveForward = -1;
-      else if (d === 'left') rotateSpeed = -1;
-      else if (d === 'right') rotateSpeed = 1;
-    }
-    if (e.key === 'Escape' || e.key === ' ') { e.preventDefault(); togglePause(); }
-  }
-
-  function onKeyUp(e) {
-    const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', a: 'left', d: 'right', w: 'up', s: 'down' };
-    const d = map[e.key];
-    if (d) {
-      if (d === 'up' || d === 'down') moveForward = 0;
-      else rotateSpeed = 0;
-    }
-  }
-
-  function frame(time) {
-    animationId = requestAnimationFrame(frame);
-    if (!lastFrame) lastFrame = time;
-    const delta = Math.min(0.1, (time - lastFrame) / 1000);
-    lastFrame = time;
-
-    if (!paused && !won) {
-      elapsed += delta;
-      updateMovement(delta);
-    }
-
-    render(time);
-  }
-
-  function bindUI() {
-    const rb = $('restartButton'), nb = $('nextButton'), pb = $('pauseButton');
-    if (rb) rb.addEventListener('click', restartLevel);
-    if (nb) nb.addEventListener('click', nextLevel);
-    if (pb) pb.addEventListener('click', togglePause);
-  }
-
-  canvas.style.touchAction = 'none';
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointermove', onPointerMove);
-  canvas.addEventListener('pointerup', onPointerUp);
-  canvas.addEventListener('pointercancel', onPointerUp);
-  document.addEventListener('keydown', onKeyDown);
-  document.addEventListener('keyup', onKeyUp);
-  document.addEventListener('drder:restart', restartLevel);
-  document.addEventListener('drder:pause', togglePause);
-  document.addEventListener('drder:next', nextLevel);
-  window.addEventListener('resize', () => syncCanvas());
-
-  loadProgress();
-  generateMaze();
-  bindUI();
-  updateStats();
-  syncCanvas();
-  initAudio();
-  loadAudio();
-
-  cancelAnimationFrame(animationId);
-  animationId = requestAnimationFrame(frame);
-
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
-  }
-})();
+    const dx = joystickCurrentX - joystickBaseX;
+    const dy = joystickCurrentY - joystickBaseY;
+    const dist = Math.sqrt(dx * dx + dy
