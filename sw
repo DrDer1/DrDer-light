@@ -1,8 +1,6 @@
-/* DrDer-light — service-worker.js */
-
 'use strict';
 
-const CACHE_NAME = 'drder-light-v1';
+const CACHE_NAME = 'drder-light-v2';
 
 const APP_FILES = [
   './',
@@ -20,7 +18,7 @@ self.addEventListener('install', (event) => {
       .then((cache) => cache.addAll(APP_FILES))
       .then(() => self.skipWaiting())
       .catch((err) => {
-        console.warn('DrDer-light SW: فشل التثبيت', err);
+        console.warn('DrDer-Light SW: install failed', err);
       })
   );
 });
@@ -39,9 +37,11 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
+
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
@@ -53,17 +53,24 @@ self.addEventListener('fetch', (event) => {
           if (!response || !response.ok || response.type !== 'basic') {
             return response;
           }
+
           const copy = response.clone();
+
           caches.open(CACHE_NAME)
             .then((cache) => cache.put(request, copy))
             .catch(() => {});
+
           return response;
         })
         .catch(() => {
           if (request.mode === 'navigate') {
             return caches.match('./index.html');
           }
-          return new Response('', { status: 503, statusText: 'Offline' });
+
+          return new Response('', {
+            status: 503,
+            statusText: 'Offline'
+          });
         });
     })
   );
