@@ -1,5 +1,6 @@
 /* DrDer-Light — engine.js
-   منظور خلف الكرة، طريق ذهبي، توليد إجرائي مضمون القابلية للحل.
+   متاهة ذهبية واقعية بمنظور خلف الكرة.
+   جدران سوداء واضحة، ممرات ذهبية متصلة، توليد إجرائي مضمون الحل.
 */
 (() => {
   'use strict';
@@ -21,19 +22,22 @@
 
   const GOLD = '#f4cf63';
   const GOLD_LIGHT = '#fff0a0';
+  const WALL_TOP = '#0a0a0a';
+  const WALL_SIDE = '#050505';
+  const WALL_EDGE = 'rgba(233,184,63,0.55)';
 
   const COLORS = {
     text: '#fff4cf',
-    pathA: '#161207',
-    pathB: '#0f0c07',
-    pathEdge: 'rgba(203,157,56,0.30)',
-    pathEdgeBright: 'rgba(232,188,78,0.32)',
-    block: '#080807',
-    blockTop: '#1a160c',
-    blockSide: '#0a0906',
-    blockEdge: 'rgba(162,126,47,0.40)',
-    blockEdgeTop: 'rgba(180,140,52,0.32)',
-    blockShadow: 'rgba(0,0,0,0.55)'
+    pathA: '#1a1508',
+    pathB: '#120f07',
+    pathEdge: 'rgba(220,175,60,0.38)',
+    pathEdgeBright: 'rgba(255,215,120,0.55)',
+    block: '#050505',
+    blockTop: '#0f0d08',
+    blockSide: '#030303',
+    blockEdge: 'rgba(200,160,60,0.55)',
+    blockEdgeTop: 'rgba(255,210,100,0.45)',
+    blockShadow: 'rgba(0,0,0,0.75)'
   };
 
   /* ============ حالة اللعبة ============ */
@@ -101,11 +105,12 @@
     return isOpen(lane, z);
   }
 
-  /* ============ التوليد الإجرائي ============ */
+  /* ============ توليد المتاهة ============ */
   function generateWorld() {
     worldLength = Math.min(MAX_LENGTH, MIN_LENGTH + level * 3);
     const rng = makeRng(level * 9973 + 12345);
 
+    // 1) مسار رئيسي متعرج
     route = new Array(worldLength + 1);
     route[0] = CENTER_LANE;
 
@@ -113,34 +118,63 @@
     let direction = 0;
 
     for (let z = 1; z <= worldLength; z++) {
-      if (z > 2 && rng() > 0.58) {
+      if (z > 3 && rng() > 0.55) {
         direction = rng() > 0.5 ? 1 : -1;
       }
       current += direction;
       current = Math.max(1, Math.min(LANES - 2, current));
-      if (rng() > 0.82) direction = 0;
+      if (rng() > 0.80) direction = 0;
       route[z] = current;
     }
 
+    // 2) بناء جدران متصلة تشكل ممرات حقيقية
+    //    نبني الكتل أولاً، ثم نفتح فتحات في المسار الرئيسي
     blocks = new Set();
 
-    for (let z = 2; z < worldLength - 1; z++) {
-      const mainLane = routeLane(z);
-      const prevLane = routeLane(z - 1);
-      const nextLane = routeLane(z + 1);
-
+    // جدار مستمر على طول العالم، ونفتح فيه وفق خوارزمية متاهة
+    for (let z = 0; z <= worldLength; z++) {
       for (let lane = 0; lane < LANES; lane++) {
-        if (lane === mainLane) continue;
-        if (lane === prevLane) continue;
-        if (lane === nextLane) continue;
+        blocks.add(keyOf(lane, z));
+      }
+    }
 
-        const r = rng();
-        if (r > 0.42) {
-          blocks.add(keyOf(lane, z));
+    // افتح المسار الرئيسي
+    for (let z = 0; z <= worldLength; z++) {
+      const lane = route[z];
+      blocks.delete(keyOf(lane, z));
+
+      // افتح فتحة اتصال أفقية عند تغير المسار بين صفين متتاليين
+      if (z > 0) {
+        const prev = route[z - 1];
+        if (prev !== lane) {
+          const step = lane > prev ? 1 : -1;
+          let l = prev;
+          while (l !== lane) {
+            l += step;
+            blocks.delete(keyOf(l, z));
+            blocks.delete(keyOf(l, z - 1));
+          }
         }
       }
     }
 
+    // افتح فروعًا جانبية تشكل ممرات متفرعة (متاهة حقيقية)
+    const branchCount = Math.min(14, 5 + Math.floor(level / 2));
+    for (let i = 0; i < branchCount; i++) {
+      const startZ = 4 + Math.floor(rng() * (worldLength - 10));
+      const startLane = routeLane(startZ);
+      const goLeft = rng() > 0.5;
+      const length = 2 + Math.floor(rng() * 5);
+
+      let l = startLane;
+      for (let s = 0; s < length; s++) {
+        l += goLeft ? -1 : 1;
+        if (l < 0 || l >= LANES) break;
+        blocks.delete(keyOf(l, startZ));
+      }
+    }
+
+    // 3) تأكد أن البوابة والبلورات على مسار مفتوح وواسع
     portalZ = worldLength - 1;
     portalLane = routeLane(portalZ);
 
@@ -151,6 +185,7 @@
     blocks.delete(keyOf(portalLane, portalZ));
     blocks.delete(keyOf(routeLane(portalZ - 1), portalZ - 1));
 
+    // 4) افتح مناطق البلورات
     placeCrystals(rng);
   }
 
@@ -318,37 +353,27 @@
   /* ============ رسم المشهد ============ */
   function drawSky(w, h) {
     const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, '#050404');
-    g.addColorStop(0.35, '#0f0c06');
-    g.addColorStop(0.7, '#080704');
-    g.addColorStop(1, '#030303');
+    g.addColorStop(0, '#040303');
+    g.addColorStop(0.35, '#0d0a05');
+    g.addColorStop(0.7, '#060604');
+    g.addColorStop(1, '#020202');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
 
     const horizon = h * 0.28;
     const glow = ctx.createRadialGradient(w * 0.5, horizon, 1, w * 0.5, horizon, w * 0.7);
-    glow.addColorStop(0, 'rgba(230,175,45,0.18)');
-    glow.addColorStop(0.4, 'rgba(140,95,20,0.06)');
+    glow.addColorStop(0, 'rgba(230,175,45,0.20)');
+    glow.addColorStop(0.4, 'rgba(140,95,20,0.07)');
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, w, h * 0.75);
 
-    ctx.strokeStyle = 'rgba(205,161,61,0.20)';
+    ctx.strokeStyle = 'rgba(205,161,61,0.22)';
     ctx.lineWidth = 1;
     for (let i = -8; i <= 8; i++) {
       ctx.beginPath();
       ctx.moveTo(w * 0.5 + i * 3, horizon);
       ctx.lineTo(w * 0.5 + i * w * 0.11, h * 1.05);
-      ctx.stroke();
-    }
-
-    ctx.strokeStyle = 'rgba(190,145,48,0.07)';
-    for (let i = 1; i <= 11; i++) {
-      const t = i / 11;
-      const y = horizon + (h - horizon) * t * t;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
       ctx.stroke();
     }
   }
@@ -358,7 +383,7 @@
     const far = project(lane, z + 1, 0, dims);
     const { h, w } = dims;
 
-    if (near.y < h * 0.20 || far.y > h * 1.5) return;
+    if (near.y < h * 0.20 || far.y > h * 1.6) return;
 
     const ln = near.x - near.laneW * 0.5;
     const rn = near.x + near.laneW * 0.5;
@@ -371,7 +396,9 @@
       ? (isMain ? COLORS.pathA : COLORS.pathB)
       : COLORS.block;
 
-    poly([[lf, far.y], [rf, far.y], [rn, near.y], [ln, near.y]], fill, COLORS.pathEdge, 1);
+    // أرضية الخلية
+    poly([[lf, far.y], [rf, far.y], [rn, near.y], [ln, near.y]], fill,
+         open ? COLORS.pathEdge : 'transparent', 1);
 
     if (open) {
       ctx.strokeStyle = COLORS.pathEdgeBright;
@@ -382,21 +409,28 @@
       ctx.moveTo(rn, near.y);
       ctx.lineTo(rf, far.y);
       ctx.stroke();
-    }
-
-    if (!open) {
-      const depth = Math.max(3, near.scale * h * 0.045);
+    } else {
+      // جدار أسود مرتفع وواضح
+      const depth = Math.max(6, near.scale * h * 0.10);
       const topY = near.y - depth;
+      const farTopY = far.y - depth * (far.scale / Math.max(0.1, near.scale));
 
-      poly([[ln, topY], [rn, topY], [rn, near.y], [ln, near.y]],
-        COLORS.blockSide, COLORS.blockEdge, 1);
+      // السطح العلوي للجدار (أسود لامع)
+      poly(
+        [[lf, farTopY], [rf, farTopY], [rn, topY], [ln, topY]],
+        COLORS.blockTop, COLORS.blockEdgeTop, 1.2
+      );
 
-      poly([[lf, far.y], [rf, far.y], [rn, topY], [ln, topY]],
-        COLORS.blockTop, COLORS.blockEdgeTop, 1);
+      // الوجه الأمامي للجدار (أسود داكن جداً)
+      poly(
+        [[ln, topY], [rn, topY], [rn, near.y], [ln, near.y]],
+        COLORS.blockSide, COLORS.blockEdge, 1
+      );
 
+      // خط ذهبي رقيق يبرز الحافة العلوية للجدار
       ctx.save();
-      ctx.strokeStyle = 'rgba(233,184,63,0.22)';
-      ctx.lineWidth = Math.max(0.6, near.scale);
+      ctx.strokeStyle = WALL_EDGE;
+      ctx.lineWidth = Math.max(0.7, near.scale * 1.1);
       ctx.beginPath();
       ctx.moveTo(ln, topY);
       ctx.lineTo(rn, topY);
@@ -485,7 +519,7 @@
     ctx.arc(x, y, r * 4, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.beginPath();
     ctx.ellipse(x, y + r * 1.15, r * 1.2, r * 0.35, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -607,6 +641,7 @@
     const startZ = Math.floor(player.visualZ + 20);
     const endZ = Math.max(0, Math.floor(player.visualZ - 2));
 
+    // ارسم من الأبعد إلى الأقرب
     for (let z = startZ; z >= endZ; z--) {
       for (let lane = 0; lane < LANES; lane++) {
         drawTile(lane, z, dims);
@@ -692,7 +727,7 @@
 
     if (!canStand(nl, nz)) {
       sound.block();
-      say('كتلة سوداء تسد الطريق');
+      say('جدار أسود يسد الطريق');
       return;
     }
 
@@ -766,7 +801,7 @@
     updateStats();
   }
 
-  /* ============ الإدخال (لمس + لوحة مفاتيح) ============ */
+  /* ============ الإدخال ============ */
   const SWIPE_MIN = 24;
 
   function onPointerDown(e) {
@@ -828,84 +863,4 @@
     animationId = requestAnimationFrame(frame);
 
     if (!lastFrame) lastFrame = time;
-    const delta = Math.min(0.1, (time - lastFrame) / 1000);
-    lastFrame = time;
-
-    if (!paused && !won) {
-      elapsed += delta;
-
-      const lerpFactor = 1 - Math.pow(0.001, delta);
-      player.visualLane += (player.lane - player.visualLane) * lerpFactor;
-      player.visualZ += (player.z - player.visualZ) * lerpFactor;
-
-      if (time - lastSecondTick >= 250) {
-        lastSecondTick = time;
-        updateStats();
-      }
-    }
-
-    render(time);
-  }
-
-  /* ============ ربط الأزرار ============ */
-  function bindUI() {
-    const rb = $('restartButton');
-    const nb = $('nextButton');
-    const pb = $('pauseButton');
-    const cap = $('caption');
-
-    if (rb) rb.addEventListener('click', restartLevel);
-    if (nb) nb.addEventListener('click', nextLevel);
-    if (pb) pb.addEventListener('click', togglePause);
-
-    if (cap) {
-      setTimeout(() => cap.classList.add('hidden'), 6000);
-    }
-  }
-
-  /* ============ تشغيل ============ */
-  canvas.style.touchAction = 'none';
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointerup', onPointerUp);
-  canvas.addEventListener('pointercancel', () => { pointerStart = null; });
-  document.addEventListener('keydown', onKeyDown);
-  document.addEventListener('drder:move', e => {
-    if (e.detail && e.detail.direction) move(e.detail.direction);
-  });
-  document.addEventListener('drder:restart', restartLevel);
-  document.addEventListener('drder:pause', togglePause);
-  document.addEventListener('drder:next', nextLevel);
-
-  window.addEventListener('resize', () => syncCanvas());
-  window.addEventListener('orientationchange', () => setTimeout(syncCanvas, 100));
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && !paused && !won) togglePause();
-  });
-
-  loadProgress();
-  generateWorld();
-  bindUI();
-  updateStats();
-  syncCanvas();
-
-  cancelAnimationFrame(animationId);
-  animationId = requestAnimationFrame(frame);
-
-  window.DrDerLight = {
-    getGameState: () => ({
-      level, moves, crystals, won, paused, bestLevel,
-      elapsed: Math.round(elapsed * 10) / 10,
-      player: { lane: player.lane, z: player.z },
-      worldLength
-    })
-  };
-
-  /* تسجيل Service Worker */
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./service-worker.js')
-        .catch(err => console.warn('SW registration failed', err));
-    });
-  }
-})();
+    const delta = Math.min(0.1, (time - lastFrame) / 1000
