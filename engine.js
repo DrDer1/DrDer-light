@@ -38,7 +38,6 @@
   let pits = [];
   let decoySigns = [];
 
-  // Dual-stick controls
   let leftStickActive = false;
   let leftStickId = null;
   let leftBaseX = 0, leftBaseY = 0, leftCurX = 0, leftCurY = 0;
@@ -63,6 +62,36 @@
   let numRays = 0;
 
   const $ = id => document.getElementById(id);
+
+  // التحقق من الوضع الأفقي وإظهار شاشة التوجيه
+  function checkOrientation() {
+    const overlay = $('rotateOverlay');
+    const app = $('app');
+    if (!overlay || !app) return;
+
+    if (window.innerHeight > window.innerWidth) {
+      overlay.style.display = 'flex';
+      app.style.display = 'none';
+    } else {
+      overlay.style.display = 'none';
+      app.style.display = 'block';
+      syncCanvas();
+    }
+  }
+
+  // محاولة قفل الشاشة (تعمل فقط في وضع ملء الشاشة وبعد تفاعل المستخدم)
+  async function lockLandscape() {
+    try {
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      }
+      if (screen.orientation && screen.orientation.lock) {
+        await screen.orientation.lock('landscape');
+      }
+    } catch (err) {
+      console.warn('Orientation lock not supported:', err);
+    }
+  }
 
   function generateMaze() {
     maze = Array.from({ length: MAZE_H }, () => Array(MAZE_W).fill(1));
@@ -720,7 +749,6 @@
     updateStats();
   }
 
-  // Dual-stick event handlers
   const leftArea = document.getElementById('leftJoystick');
   const rightArea = document.getElementById('rightJoystick');
 
@@ -779,7 +807,6 @@
     stopWalkSound();
   }
 
-  // UI Bindings
   function bindUI() {
     const startScreen = $('startScreen');
     const gameUI = $('gameUI');
@@ -792,7 +819,6 @@
     const pauseBtn = $('pauseButton');
     const exitBtn = $('exitBtn');
 
-    // Check for saved progress
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
       if (s.level > 1) {
@@ -804,9 +830,11 @@
       startScreen.style.display = 'none';
       gameUI.style.display = 'block';
       syncCanvas();
+      checkOrientation();
     }
 
-    startBtn.addEventListener('click', () => {
+    startBtn.addEventListener('click', async () => {
+      await lockLandscape();
       level = 1;
       bestTimes = {};
       saveProgress();
@@ -814,7 +842,8 @@
       showGame();
     });
 
-    continueBtn.addEventListener('click', () => {
+    continueBtn.addEventListener('click', async () => {
+      await lockLandscape();
       loadProgress();
       restartLevel();
       showGame();
@@ -854,6 +883,11 @@
     rightArea.addEventListener('pointermove', onRightMove);
     rightArea.addEventListener('pointerup', onRightUp);
     rightArea.addEventListener('pointercancel', onRightUp);
+
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', () => {
+      setTimeout(checkOrientation, 100);
+    });
   }
 
   window.addEventListener('resize', () => syncCanvas());
@@ -863,6 +897,7 @@
   updateStats();
   bindUI();
   syncCanvas();
+  checkOrientation();
   initAudio();
   loadAudio();
 
