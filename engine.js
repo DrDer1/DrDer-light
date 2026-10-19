@@ -8,7 +8,7 @@
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const SAVE_KEY = 'drder-light-save-v12';
+  const SAVE_KEY = 'drder-light-save-v13';
   const CRYSTAL_COUNT = 2;
   const MAZE_W = 21;
   const MAZE_H = 51;
@@ -63,7 +63,6 @@
 
   const $ = id => document.getElementById(id);
 
-  // التحقق من الوضع الأفقي وإظهار شاشة التوجيه
   function checkOrientation() {
     const overlay = $('rotateOverlay');
     const app = $('app');
@@ -79,7 +78,6 @@
     }
   }
 
-  // محاولة قفل الشاشة (تعمل فقط في وضع ملء الشاشة وبعد تفاعل المستخدم)
   async function lockLandscape() {
     try {
       if (document.documentElement.requestFullscreen) {
