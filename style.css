@@ -14,201 +14,187 @@
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+  margin: 0;
+  padding: 0;
 }
 
 html, body {
-  margin: 0;
-  min-height: 100%;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   background: var(--bg);
-}
-
-body {
-  min-height: 100dvh;
   color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   user-select: none;
   -webkit-user-select: none;
-  overscroll-behavior: none;
-  background:
-    radial-gradient(ellipse at 50% 10%, #21190a 0%, transparent 48%),
-    var(--bg);
-}
-
-button {
-  font: inherit;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-button:focus-visible {
-  outline: 2px solid var(--gold-light);
-  outline-offset: 3px;
+  touch-action: none;
 }
 
 .app {
-  width: min(100%, 620px);
+  position: relative;
+  width: 100vw;
   height: 100dvh;
-  margin: 0 auto;
-  padding: max(14px, env(safe-area-inset-top)) 14px
-    max(14px, env(safe-area-inset-bottom));
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 50%, #171208 0%, #080808 80%);
+}
+
+/* ================= شاشة البداية ================= */
+.start-screen {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  isolation: isolate;
-}
-
-.header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.brand {
-  display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
+  padding: 40px 20px;
+  z-index: 100;
+  background: radial-gradient(ellipse at 50% 50%, rgba(23, 18, 8, 0.95) 0%, rgba(8, 8, 8, 1) 90%);
 }
 
-.brand img {
-  width: 48px;
-  height: 48px;
-  object-fit: contain;
-  border-radius: 13px;
-  border: 1px solid rgba(233, 185, 54, 0.28);
-  box-shadow: 0 0 18px rgba(233, 185, 54, 0.08);
-  flex-shrink: 0;
-}
-
-.brand-text {
-  min-width: 0;
-}
-
-.brand h1 {
-  margin: 0;
+.start-title {
   color: var(--gold-light);
-  font-size: 22px;
-  letter-spacing: 0.4px;
+  font-size: clamp(36px, 8vh, 64px);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-shadow: 0 0 20px rgba(233, 184, 63, 0.4);
   direction: ltr;
-  text-align: right;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  margin-top: 10vh;
 }
 
-.brand p {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.start-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  width: 100%;
+  max-width: 300px;
 }
 
-.icon-button,
-.action-button {
-  border: 1px solid var(--border);
+.start-btn {
+  background: transparent;
+  border: 2px solid var(--gold);
   color: var(--gold-light);
-  background: linear-gradient(145deg, #1d1a13, #101010);
+  font-size: 20px;
+  font-weight: bold;
+  padding: 15px 20px;
   border-radius: 12px;
   cursor: pointer;
-  touch-action: manipulation;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    transform 100ms ease,
-    box-shadow 120ms ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 15px rgba(233, 184, 63, 0.1);
 }
 
-.icon-button {
-  min-width: 44px;
-  min-height: 44px;
-  font-size: 20px;
-  flex-shrink: 0;
+.start-btn.secondary {
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.start-btn:active {
+  transform: scale(0.96);
+  background: rgba(233, 184, 63, 0.1);
+}
+
+.copyright {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 10px;
+  text-align: center;
+  direction: ltr;
+}
+
+/* ================= واجهة اللعب ================= */
+.game-ui {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .game-frame {
-  position: relative;
-  width: 100%;
-  flex-grow: 1;
-  min-height: 200px;
-  overflow: hidden;
-  border: 1px solid rgba(233, 185, 54, 0.48);
-  border-radius: 18px;
-  background:
-    radial-gradient(ellipse at 50% 40%, #171208, #080808 72%);
-  box-shadow:
-    0 0 24px rgba(177, 123, 20, 0.07),
-    inset 0 0 25px #000;
-  touch-action: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
 }
 
 #gameCanvas {
   display: block;
   width: 100%;
   height: 100%;
-  touch-action: none;
   outline: none;
-  -webkit-user-select: none;
-  user-select: none;
+  touch-action: none;
 }
 
-.actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 9px;
-  flex-shrink: 0;
+/* زر القائمة */
+.menu-btn {
+  position: absolute;
+  top: 15px;
+  left: 15px;
+  z-index: 20;
+  background: rgba(20, 20, 20, 0.8);
+  border: 1px solid var(--border);
+  color: var(--gold-light);
+  font-size: 24px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
 }
 
-.action-button {
-  min-height: 47px;
-  padding: 10px;
-  font-size: 14px;
-  font-weight: 650;
+/* القائمة المنسدلة */
+.dropdown-menu {
+  position: absolute;
+  top: 65px;
+  left: 15px;
+  z-index: 30;
+  background: rgba(15, 15, 15, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 160px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
 }
 
-.action-button:disabled {
+.dropdown-item {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 15px;
+  padding: 10px 12px;
+  text-align: right;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.dropdown-item:hover:not(:disabled),
+.dropdown-item:active:not(:disabled) {
+  background: rgba(233, 184, 63, 0.15);
+  color: var(--gold-light);
+}
+
+.dropdown-item:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.icon-button:hover,
-.action-button:not(:disabled):hover {
-  border-color: var(--gold);
-  box-shadow: 0 0 12px rgba(233, 185, 54, 0.08);
+/* مناطق عصا التحكم (شفافة لالتقاط اللمس) */
+.joystick-area {
+  position: absolute;
+  bottom: 0;
+  height: 60%;
+  width: 50%;
+  z-index: 10;
+  touch-action: none;
 }
 
-.icon-button:active,
-.action-button:not(:disabled):active {
-  transform: scale(0.96);
-  background: #30230c;
+.joystick-area.left {
+  left: 0;
 }
 
-.footer {
-  padding-top: 4px;
-  color: #756b55;
-  font-size: 11px;
-  text-align: center;
-  letter-spacing: 1.2px;
-  flex-shrink: 0;
-}
-
-@media (max-height: 700px) {
-  .brand img { width: 40px; height: 40px; }
-  .brand h1 { font-size: 19px; }
-  .brand p { display: none; }
-  .action-button { min-height: 42px; }
-}
-
-@media (max-width: 360px) {
-  .app { padding-inline: 10px; gap: 10px; }
-  .brand h1 { font-size: 18px; }
-  .brand img { width: 44px; height: 44px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; }
-  .icon-button, .action-button { transition: none; }
+.joystick-area.right {
+  right: 0;
 }
