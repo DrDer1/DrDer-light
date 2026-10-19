@@ -2,9 +2,9 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#080808">
-  <meta name="description" content="DrDer-Light — متاهة ذهبية ثلاثية الأبعاد. اجمع البلورتين واعثر على البوابة المضيئة.">
+  <meta name="description" content="DrDer-Light — متاهة ذهبية ثلاثية الأبعاد.">
   <title>DrDer-Light</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" type="image/png" href="./192.png">
@@ -13,40 +13,44 @@
 </head>
 
 <body>
-  <main class="app">
-    <header class="header">
-      <div class="brand">
-        <img src="./192.png" alt="DrDer-Light">
-        <div class="brand-text">
-          <h1>DrDer-Light</h1>
-          <p>اسحب لأعلى للتقدم · يمينًا ويسارًا للدوران</p>
-        </div>
+  <div id="app" class="app landscape-mode">
+    
+    <!-- شاشة البداية -->
+    <div id="startScreen" class="start-screen">
+      <h1 class="start-title">DrDer-Light</h1>
+      <div class="start-actions">
+        <button id="startBtn" class="start-btn">بداية اللعب</button>
+        <button id="continueBtn" class="start-btn secondary" style="display:none;">استمرار اللعب</button>
+      </div>
+      <div class="copyright">كل الحقوق محفوظة DrDer 2026</div>
+    </div>
+
+    <!-- واجهة اللعب -->
+    <main id="gameUI" class="game-ui" style="display:none;">
+      
+      <!-- زر القائمة أعلى اليسار -->
+      <button id="menuBtn" class="menu-btn" aria-label="القائمة">☰</button>
+
+      <!-- قائمة منسدلة -->
+      <div id="dropdownMenu" class="dropdown-menu" style="display:none;">
+        <button id="pauseButton" class="dropdown-item">إيقاف مؤقت</button>
+        <button id="restartButton" class="dropdown-item">إعادة المرحلة</button>
+        <button id="nextButton" class="dropdown-item" disabled>المرحلة التالية</button>
+        <button id="exitBtn" class="dropdown-item">إنهاء اللعب</button>
       </div>
 
-      <button class="icon-button" id="pauseButton"
-        type="button" aria-label="إيقاف اللعبة مؤقتًا"
-        title="إيقاف مؤقت">Ⅱ</button>
-    </header>
+      <!-- رقعة اللعب -->
+      <section class="game-frame">
+        <canvas id="gameCanvas">متصفحك لا يدعم عرض اللعبة.</canvas>
+      </section>
 
-    <section class="game-frame" aria-label="لوحة المتاهة">
-      <canvas id="gameCanvas">
-        متصفحك لا يدعم عرض اللعبة.
-      </canvas>
-    </section>
+      <!-- عصا التحكم اليسرى (للالتفاف) -->
+      <div id="leftJoystick" class="joystick-area left"></div>
+      <!-- عصا التحكم اليمنى (للحركة) -->
+      <div id="rightJoystick" class="joystick-area right"></div>
 
-    <section class="actions">
-      <button class="action-button" id="restartButton" type="button">
-        ↻ إعادة المرحلة
-      </button>
-      <button class="action-button" id="nextButton" type="button" disabled>
-        المرحلة التالية ›
-      </button>
-    </section>
-
-    <footer class="footer">
-      DrDer-Light · متاهة الظلال الذهبية
-    </footer>
-  </main>
+    </main>
+  </div>
 
   <script src="./engine.js" defer></script>
 </body>
