@@ -50,6 +50,7 @@
   const DEADZONE = 10;
 
   let moveForward = 0;
+  let moveStrength = 0; // قيمة بين 0 و 1 لشدة الحركة
   let rotateSpeed = 0;
 
   let audioCtx = null;
@@ -670,6 +671,14 @@
       player.angle += rotateSpeed * rotSpeed * dt;
     }
 
+    // تحديث سرعة صوت المشي بناءً على شدة الحركة
+    if (isWalking && walkAudio) {
+      // تحويل شدة الحركة (0 إلى 1) إلى معدل تشغيل (0.5 إلى 1.5)
+      // نستخدم 0.5 كحد أدنى لتجنب كتم الصوت في بعض المتصفحات
+      const rate = 0.5 + (moveStrength * 1.0);
+      walkAudio.playbackRate = Math.min(1.5, Math.max(0.5, rate));
+    }
+
     if (moving) {
       if (canMove(player.x + dx, player.y + dy)) {
         player.x += dx; player.y += dy;
@@ -729,6 +738,7 @@
 
   function restartLevel() {
     moves = 0; crystals = 0; elapsed = 0; paused = false; won = false; success = false; dead = false; message = '';
+    moveStrength = 0;
     stopWalkSound();
     generateMaze(); say('المرحلة ' + level); updateStats();
   }
@@ -792,9 +802,10 @@
     rightCurX = e.clientX; rightCurY = e.clientY;
     const dy = rightCurY - rightBaseY;
     const dist = Math.abs(dy);
-    if (dist < DEADZONE) { moveForward = 0; return; }
+    if (dist < DEADZONE) { moveForward = 0; moveStrength = 0; return; }
     const strength = Math.min(1, dist / STICK_RADIUS);
     moveForward = -(dy / dist) * strength;
+    moveStrength = strength; // حفظ شدة الحركة
   }
 
   function onRightUp(e) {
@@ -802,6 +813,7 @@
     rightStickActive = false;
     rightStickId = null;
     moveForward = 0;
+    moveStrength = 0;
     stopWalkSound();
   }
 
