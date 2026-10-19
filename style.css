@@ -61,7 +61,6 @@ html, body {
   to { transform: rotate(360deg); }
 }
 
-/* إظهار شاشة التوجيه فقط عندما تكون الشاشة رأسية */
 @media (orientation: portrait) {
   .rotate-overlay {
     display: flex !important;
@@ -163,7 +162,6 @@ html, body {
   touch-action: none;
 }
 
-/* زر القائمة */
 .menu-btn {
   position: absolute;
   top: 15px;
@@ -183,7 +181,6 @@ html, body {
   backdrop-filter: blur(4px);
 }
 
-/* القائمة المنسدلة */
 .dropdown-menu {
   position: absolute;
   top: 65px;
@@ -222,7 +219,6 @@ html, body {
   cursor: not-allowed;
 }
 
-/* مناطق عصا التحكم (شفافة لالتقاط اللمس) */
 .joystick-area {
   position: absolute;
   bottom: 0;
