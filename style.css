@@ -30,6 +30,47 @@ html, body {
   touch-action: none;
 }
 
+/* شاشة توجيه الجهاز للوضع الأفقي */
+.rotate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #080808;
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  color: var(--gold-light);
+  text-align: center;
+  padding: 20px;
+}
+
+.rotate-overlay .rotate-icon {
+  font-size: 80px;
+  animation: spin 2s linear infinite;
+}
+
+.rotate-overlay p {
+  font-size: 18px;
+  color: var(--text);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* إظهار شاشة التوجيه فقط عندما تكون الشاشة رأسية */
+@media (orientation: portrait) {
+  .rotate-overlay {
+    display: flex !important;
+  }
+  #app {
+    display: none !important;
+  }
+}
+
 .app {
   position: relative;
   width: 100vw;
