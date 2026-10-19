@@ -15,7 +15,6 @@
 <body>
   <div id="app" class="app landscape-mode">
     
-    <!-- شاشة البداية -->
     <div id="startScreen" class="start-screen">
       <h1 class="start-title">DrDer-Light</h1>
       <div class="start-actions">
@@ -25,13 +24,9 @@
       <div class="copyright">كل الحقوق محفوظة DrDer 2026</div>
     </div>
 
-    <!-- واجهة اللعب -->
     <main id="gameUI" class="game-ui" style="display:none;">
-      
-      <!-- زر القائمة أعلى اليسار -->
       <button id="menuBtn" class="menu-btn" aria-label="القائمة">☰</button>
 
-      <!-- قائمة منسدلة -->
       <div id="dropdownMenu" class="dropdown-menu" style="display:none;">
         <button id="pauseButton" class="dropdown-item">إيقاف مؤقت</button>
         <button id="restartButton" class="dropdown-item">إعادة المرحلة</button>
@@ -39,16 +34,12 @@
         <button id="exitBtn" class="dropdown-item">إنهاء اللعب</button>
       </div>
 
-      <!-- رقعة اللعب -->
       <section class="game-frame">
         <canvas id="gameCanvas">متصفحك لا يدعم عرض اللعبة.</canvas>
       </section>
 
-      <!-- عصا التحكم اليسرى (للالتفاف) -->
       <div id="leftJoystick" class="joystick-area left"></div>
-      <!-- عصا التحكم اليمنى (للحركة) -->
       <div id="rightJoystick" class="joystick-area right"></div>
-
     </main>
   </div>
 
