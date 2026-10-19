@@ -1,5 +1,5 @@
 /* DrDer-Light — engine.js
-   متاهة Raycasting، مفاتيح، أبواب، حفر حقيقية (Floor Casting)، أسهم خادعة على الجدران، عصا تحكم.
+   متاهة Raycasting، مفاتيح، أبواب، حفر حقيقية، أسهم خادعة، عصا تحكم مزدوجة (Dual-stick).
 */
 (() => {
   'use strict';
@@ -8,7 +8,7 @@
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const SAVE_KEY = 'drder-light-save-v11';
+  const SAVE_KEY = 'drder-light-save-v12';
   const CRYSTAL_COUNT = 2;
   const MAZE_W = 21;
   const MAZE_H = 51;
@@ -38,17 +38,19 @@
   let pits = [];
   let decoySigns = [];
 
-  let joystickActive = false;
-  let joystickBaseX = 0;
-  let joystickBaseY = 0;
-  let joystickCurrentX = 0;
-  let joystickCurrentY = 0;
-  let joystickPointerId = null;
-  const JOYSTICK_RADIUS = 60;
-  const JOYSTICK_DEADZONE = 10;
+  // Dual-stick controls
+  let leftStickActive = false;
+  let leftStickId = null;
+  let leftBaseX = 0, leftBaseY = 0, leftCurX = 0, leftCurY = 0;
+  
+  let rightStickActive = false;
+  let rightStickId = null;
+  let rightBaseX = 0, rightBaseY = 0, rightCurX = 0, rightCurY = 0;
+
+  const STICK_RADIUS = 50;
+  const DEADZONE = 10;
 
   let moveForward = 0;
-  let moveSide = 0;
   let rotateSpeed = 0;
 
   let audioCtx = null;
@@ -57,7 +59,6 @@
   let hurtAudio = null;
   let isWalking = false;
 
-  // Depth buffer for wall occlusion (1D per column)
   let depthBuffer = [];
   let numRays = 0;
 
@@ -108,7 +109,6 @@
       }
     }
 
-    // حفر حقيقية (Pits) - تسبب الموت عند السقوط
     for (let i = 0; i < 15; i++) {
       const px = 3 + Math.floor(Math.random() * (MAZE_W - 6));
       const py = 5 + Math.floor(Math.random() * (MAZE_H - 10));
@@ -117,12 +117,10 @@
       }
     }
 
-    // أسهم خادعة على الجدران (تُرسم فقط عند رؤيتها)
     for (let i = 0; i < 12; i++) {
       const sx = 3 + Math.floor(Math.random() * (MAZE_W - 6));
       const sy = 5 + Math.floor(Math.random() * (MAZE_H - 10));
       if (maze[sy][sx] === 0) {
-        // ابحث عن جدار مجاور لرسم السهم عليه
         const walls = [];
         if (maze[sy - 1] && maze[sy - 1][sx] === 1) walls.push({ dx: 0, dy: -1, angle: Math.PI });
         if (maze[sy + 1] && maze[sy + 1][sx] === 1) walls.push({ dx: 0, dy: 1, angle: 0 });
@@ -134,9 +132,7 @@
           decoySigns.push({
             x: sx + 0.5 + w.dx * 0.45,
             y: sy + 0.5 + w.dy * 0.45,
-            angle: w.angle,
-            wallX: sx + 0.5,
-            wallY: sy + 0.5
+            angle: w.angle
           });
         }
       }
@@ -183,7 +179,7 @@
   function updateStats() {
     const nb = $('nextButton'), pb = $('pauseButton');
     if (nb) nb.disabled = !won;
-    if (pb) pb.textContent = paused ? '▶' : 'Ⅱ';
+    if (pb) pb.textContent = paused ? 'استئناف' : 'إيقاف مؤقت';
   }
 
   function say(text, dur = 1500) { message = text; messageUntil = performance.now() + dur; }
@@ -270,7 +266,6 @@
     const dims = syncCanvas();
     const { w, h } = dims;
 
-    // خلفية السماء والأرضية
     const sky = ctx.createLinearGradient(0, 0, 0, h * 0.5);
     sky.addColorStop(0, '#020202');
     sky.addColorStop(1, '#0a0805');
@@ -291,7 +286,6 @@
     const camX = -dirY * 0.66;
     const camY = dirX * 0.66;
 
-    // Initialize depth buffer
     depthBuffer = new Array(numRays).fill(Infinity);
 
     for (let i = 0; i < numRays; i++) {
@@ -353,7 +347,6 @@
       }
     }
 
-    // رسم الحفر على الأرضية (Pits) - فقط إذا كانت مرئية
     pits.forEach(pit => {
       const dx = pit.x - player.x, dy = pit.y - player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -367,7 +360,6 @@
           const size = Math.max(8, 60 / dist);
           const yPos = h / 2 + (h / dist) * 0.1;
           
-          // رسم الحفرة كبيضاوية سوداء عميقة
           ctx.save();
           const pitGrad = ctx.createRadialGradient(screenX, yPos, 2, screenX, yPos, size);
           pitGrad.addColorStop(0, '#000000');
@@ -378,7 +370,6 @@
           ctx.ellipse(screenX, yPos, size * 1.2, size * 0.5, 0, 0, Math.PI * 2);
           ctx.fill();
           
-          // أشواك حمراء داخل الحفرة
           ctx.fillStyle = '#661111';
           for (let s = -1; s <= 1; s++) {
             ctx.beginPath();
@@ -392,7 +383,6 @@
       }
     });
 
-    // رسم الأسهم الخادعة على الجدران (فقط عند رؤيتها)
     decoySigns.forEach(s => {
       const dx = s.x - player.x, dy = s.y - player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -403,7 +393,6 @@
       if (Math.abs(diff) < fov / 2 && dist > 0.2 && dist < 12) {
         const screenX = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
         if (screenX >= 0 && screenX <= w) {
-          // تحقق من عدم حجب السهم بواسطة جدار
           const rayIndex = Math.floor((screenX / w) * numRays);
           if (rayIndex >= 0 && rayIndex < numRays && depthBuffer[rayIndex] > dist - 0.5) {
             const size = Math.max(6, 40 / dist);
@@ -411,7 +400,6 @@
             ctx.save();
             ctx.translate(screenX, yPos);
             ctx.rotate(s.angle - player.angle);
-            // سهم أحمر خادع
             ctx.fillStyle = 'rgba(255, 51, 51, 0.7)';
             ctx.shadowColor = RED;
             ctx.shadowBlur = 10;
@@ -430,7 +418,6 @@
       }
     });
 
-    // رسم المفاتيح
     crystalsPos.forEach(c => {
       if (c.collected) return;
       const dx = c.x - player.x, dy = c.y - player.y;
@@ -459,7 +446,6 @@
       }
     });
 
-    // رسم البوابة
     const pdx = portalPos.x - player.x, pdy = portalPos.y - player.y;
     const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
     if (pdist > 0.2) {
@@ -496,13 +482,11 @@
       }
     }
 
-    // رسم قطرات الدم عند الموت
     if (dead && performance.now() - deathTime < 2000) {
       const t = (performance.now() - deathTime) / 2000;
       const alpha = Math.max(0, 1 - t);
       ctx.save();
       ctx.fillStyle = `rgba(200, 0, 0, ${alpha})`;
-      // بقع دم عشوائية
       for (let i = 0; i < 20; i++) {
         const rx = (Math.sin(i * 12.9898 + deathTime) * 0.5 + 0.5) * w;
         const ry = (Math.sin(i * 78.233 + deathTime) * 0.5 + 0.5) * h;
@@ -515,7 +499,7 @@
     }
 
     drawHUD(w, h);
-    drawJoystick(w, h);
+    drawSticks();
     drawMessage(w, h);
     drawOverlay(w, h);
   }
@@ -532,38 +516,43 @@
     ctx.restore();
   }
 
-  function drawJoystick(w, h) {
-    if (!joystickActive) return;
+  function drawSticks() {
+    if (leftStickActive) {
+      drawStickVisual(leftBaseX, leftBaseY, leftCurX, leftCurY);
+    }
+    if (rightStickActive) {
+      drawStickVisual(rightBaseX, rightBaseY, rightCurX, rightCurY);
+    }
+  }
 
+  function drawStickVisual(bx, by, cx, cy) {
     ctx.save();
-    ctx.strokeStyle = 'rgba(233,184,63,0.4)';
+    ctx.strokeStyle = 'rgba(233,184,63,0.3)';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(joystickBaseX, joystickBaseY, JOYSTICK_RADIUS, 0, Math.PI * 2);
+    ctx.arc(bx, by, STICK_RADIUS, 0, Math.PI * 2);
     ctx.stroke();
 
-    const grad = ctx.createRadialGradient(joystickBaseX, joystickBaseY, 5, joystickBaseX, joystickBaseY, JOYSTICK_RADIUS);
-    grad.addColorStop(0, 'rgba(233,184,63,0.15)');
+    const grad = ctx.createRadialGradient(bx, by, 5, bx, by, STICK_RADIUS);
+    grad.addColorStop(0, 'rgba(233,184,63,0.1)');
     grad.addColorStop(1, 'rgba(233,184,63,0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.arc(joystickBaseX, joystickBaseY, JOYSTICK_RADIUS, 0, Math.PI * 2);
+    ctx.arc(bx, by, STICK_RADIUS, 0, Math.PI * 2);
     ctx.fill();
 
-    let knobX = joystickCurrentX;
-    let knobY = joystickCurrentY;
-    const dx = knobX - joystickBaseX;
-    const dy = knobY - joystickBaseY;
+    let kx = cx, ky = cy;
+    const dx = kx - bx, dy = ky - by;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > JOYSTICK_RADIUS) {
-      knobX = joystickBaseX + (dx / dist) * JOYSTICK_RADIUS;
-      knobY = joystickBaseY + (dy / dist) * JOYSTICK_RADIUS;
+    if (dist > STICK_RADIUS) {
+      kx = bx + (dx / dist) * STICK_RADIUS;
+      ky = by + (dy / dist) * STICK_RADIUS;
     }
 
-    ctx.shadowColor = GOLD; ctx.shadowBlur = 12;
-    ctx.fillStyle = 'rgba(244,207,99,0.7)';
+    ctx.shadowColor = GOLD; ctx.shadowBlur = 10;
+    ctx.fillStyle = 'rgba(244,207,99,0.6)';
     ctx.beginPath();
-    ctx.arc(knobX, knobY, 20, 0, Math.PI * 2);
+    ctx.arc(kx, ky, 18, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = GOLD_LIGHT;
     ctx.lineWidth = 2;
@@ -596,8 +585,6 @@
       ctx.shadowColor = GOLD; ctx.shadowBlur = 14; ctx.fillStyle = GOLD_LIGHT;
       ctx.font = 'bold 24px sans-serif';
       ctx.fillText('اللعبة متوقفة', w / 2, h * 0.48);
-      ctx.font = '14px sans-serif'; ctx.fillStyle = '#fff4cf';
-      ctx.fillText('اضغط زر التشغيل للاستئناف', w / 2, h * 0.55);
       ctx.restore();
     }
     if (dead) {
@@ -607,7 +594,7 @@
       ctx.font = 'bold 28px sans-serif';
       ctx.fillText('لقد وقعت في الفخ!', w / 2, h * 0.45);
       ctx.font = '16px sans-serif';
-      ctx.fillText('اضغط إعادة المحاولة', w / 2, h * 0.55);
+      ctx.fillText('اضغط إعادة المحاولة من القائمة', w / 2, h * 0.55);
       ctx.restore();
     }
     if (success) {
@@ -620,13 +607,6 @@
       ctx.fillText('المرحلة ' + level, w / 2, h * 0.42);
       ctx.font = '15px sans-serif';
       ctx.fillText('الوقت: ' + formatTime(elapsed), w / 2, h * 0.50);
-      const best = bestTimes[String(level)];
-      if (best && Math.abs(best - elapsed) < 0.5) {
-        ctx.fillStyle = GOLD_LIGHT; ctx.font = 'bold 14px sans-serif';
-        ctx.fillText('★ رقم قياسي جديد!', w / 2, h * 0.57);
-      }
-      ctx.fillStyle = '#fff4cf'; ctx.font = '14px sans-serif';
-      ctx.fillText('اضغط «المرحلة التالية» للمتابعة', w / 2, h * 0.66);
       ctx.restore();
     }
   }
@@ -656,14 +636,6 @@
       const dirY = Math.sin(player.angle);
       dx += dirX * moveForward * speed * dt;
       dy += dirY * moveForward * speed * dt;
-      moving = true;
-    }
-
-    if (moveSide !== 0) {
-      const dirX = Math.cos(player.angle + Math.PI / 2);
-      const dirY = Math.sin(player.angle + Math.PI / 2);
-      dx += dirX * moveSide * speed * dt;
-      dy += dirY * moveSide * speed * dt;
       moving = true;
     }
 
@@ -729,7 +701,6 @@
   }
 
   function restartLevel() {
-    if (won && !confirm('سيتم فقدان نتيجة المرحلة الحالية. متابعة؟')) return;
     moves = 0; crystals = 0; elapsed = 0; paused = false; won = false; success = false; dead = false; message = '';
     stopWalkSound();
     generateMaze(); say('المرحلة ' + level); updateStats();
@@ -738,9 +709,7 @@
   function nextLevel() {
     if (!won) { say('أكمل المرحلة أولاً'); return; }
     level++; saveProgress();
-    moves = 0; crystals = 0; elapsed = 0; paused = false; won = false; success = false; dead = false; message = '';
-    stopWalkSound();
-    generateMaze(); say('المرحلة ' + level); updateStats();
+    restartLevel();
   }
 
   function togglePause() {
@@ -751,85 +720,154 @@
     updateStats();
   }
 
-  function onPointerDown(e) {
+  // Dual-stick event handlers
+  const leftArea = document.getElementById('leftJoystick');
+  const rightArea = document.getElementById('rightJoystick');
+
+  function onLeftDown(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    leftStickActive = true;
+    leftStickId = e.pointerId;
+    leftBaseX = e.clientX; leftBaseY = e.clientY;
+    leftCurX = e.clientX; leftCurY = e.clientY;
+    leftArea.setPointerCapture(e.pointerId);
+  }
+
+  function onLeftMove(e) {
+    if (!leftStickActive || e.pointerId !== leftStickId) return;
+    leftCurX = e.clientX; leftCurY = e.clientY;
+    const dx = leftCurX - leftBaseX;
+    const dist = Math.abs(dx);
+    if (dist < DEADZONE) { rotateSpeed = 0; return; }
+    const strength = Math.min(1, dist / STICK_RADIUS);
+    rotateSpeed = (dx / dist) * strength;
+  }
+
+  function onLeftUp(e) {
+    if (e.pointerId !== leftStickId) return;
+    leftStickActive = false;
+    leftStickId = null;
+    rotateSpeed = 0;
+  }
+
+  function onRightDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     initAudio();
     if (!walkAudio) loadAudio();
-
-    joystickActive = true;
-    joystickPointerId = e.pointerId;
-    
-    joystickBaseX = e.clientX;
-    joystickBaseY = e.clientY;
-    joystickCurrentX = e.clientX;
-    joystickCurrentY = e.clientY;
-
-    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    rightStickActive = true;
+    rightStickId = e.pointerId;
+    rightBaseX = e.clientX; rightBaseY = e.clientY;
+    rightCurX = e.clientX; rightCurY = e.clientY;
+    rightArea.setPointerCapture(e.pointerId);
   }
 
-  function onPointerMove(e) {
-    if (!joystickActive || e.pointerId !== joystickPointerId) return;
-    joystickCurrentX = e.clientX;
-    joystickCurrentY = e.clientY;
-
-    const dx = joystickCurrentX - joystickBaseX;
-    const dy = joystickCurrentY - joystickBaseY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist < JOYSTICK_DEADZONE) {
-      moveForward = 0;
-      moveSide = 0;
-      rotateSpeed = 0;
-      return;
-    }
-
-    const nx = dx / dist;
-    const ny = dy / dist;
-    const strength = Math.min(1, dist / JOYSTICK_RADIUS);
-
-    moveForward = -ny * strength;
-    moveSide = nx * strength;
-    
-    if (Math.abs(dx) > Math.abs(dy) * 1.2) {
-      rotateSpeed = nx * strength;
-    } else {
-      rotateSpeed = 0;
-    }
+  function onRightMove(e) {
+    if (!rightStickActive || e.pointerId !== rightStickId) return;
+    rightCurX = e.clientX; rightCurY = e.clientY;
+    const dy = rightCurY - rightBaseY;
+    const dist = Math.abs(dy);
+    if (dist < DEADZONE) { moveForward = 0; return; }
+    const strength = Math.min(1, dist / STICK_RADIUS);
+    moveForward = -(dy / dist) * strength;
   }
 
-  function onPointerUp(e) {
-    if (e.pointerId !== joystickPointerId) return;
-    joystickActive = false;
-    joystickPointerId = null;
+  function onRightUp(e) {
+    if (e.pointerId !== rightStickId) return;
+    rightStickActive = false;
+    rightStickId = null;
     moveForward = 0;
-    moveSide = 0;
-    rotateSpeed = 0;
     stopWalkSound();
   }
 
-  function onKeyDown(e) {
-    const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', a: 'left', d: 'right', w: 'up', s: 'down' };
-    const d = map[e.key];
-    if (d) {
-      e.preventDefault();
-      if (d === 'up') moveForward = 1;
-      else if (d === 'down') moveForward = -1;
-      else if (d === 'left') rotateSpeed = -1;
-      else if (d === 'right') rotateSpeed = 1;
+  // UI Bindings
+  function bindUI() {
+    const startScreen = $('startScreen');
+    const gameUI = $('gameUI');
+    const startBtn = $('startBtn');
+    const continueBtn = $('continueBtn');
+    const menuBtn = $('menuBtn');
+    const dropdown = $('dropdownMenu');
+    const restartBtn = $('restartButton');
+    const nextBtn = $('nextButton');
+    const pauseBtn = $('pauseButton');
+    const exitBtn = $('exitBtn');
+
+    // Check for saved progress
+    try {
+      const s = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
+      if (s.level > 1) {
+        continueBtn.style.display = 'block';
+      }
+    } catch (_) {}
+
+    function showGame() {
+      startScreen.style.display = 'none';
+      gameUI.style.display = 'block';
+      syncCanvas();
     }
-    if (e.key === 'Escape' || e.key === ' ') { e.preventDefault(); togglePause(); }
+
+    startBtn.addEventListener('click', () => {
+      level = 1;
+      bestTimes = {};
+      saveProgress();
+      restartLevel();
+      showGame();
+    });
+
+    continueBtn.addEventListener('click', () => {
+      loadProgress();
+      restartLevel();
+      showGame();
+    });
+
+    menuBtn.addEventListener('click', () => {
+      dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
+    });
+
+    pauseBtn.addEventListener('click', () => {
+      togglePause();
+      dropdown.style.display = 'none';
+    });
+
+    restartBtn.addEventListener('click', () => {
+      restartLevel();
+      dropdown.style.display = 'none';
+    });
+
+    nextBtn.addEventListener('click', () => {
+      nextLevel();
+      dropdown.style.display = 'none';
+    });
+
+    exitBtn.addEventListener('click', () => {
+      dropdown.style.display = 'none';
+      gameUI.style.display = 'none';
+      startScreen.style.display = 'flex';
+    });
+
+    leftArea.addEventListener('pointerdown', onLeftDown);
+    leftArea.addEventListener('pointermove', onLeftMove);
+    leftArea.addEventListener('pointerup', onLeftUp);
+    leftArea.addEventListener('pointercancel', onLeftUp);
+
+    rightArea.addEventListener('pointerdown', onRightDown);
+    rightArea.addEventListener('pointermove', onRightMove);
+    rightArea.addEventListener('pointerup', onRightUp);
+    rightArea.addEventListener('pointercancel', onRightUp);
   }
 
-  function onKeyUp(e) {
-    const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', a: 'left', d: 'right', w: 'up', s: 'down' };
-    const d = map[e.key];
-    if (d) {
-      if (d === 'up' || d === 'down') moveForward = 0;
-      else rotateSpeed = 0;
-    }
-  }
+  window.addEventListener('resize', () => syncCanvas());
 
-  function frame(time) {
+  loadProgress();
+  generateMaze();
+  updateStats();
+  bindUI();
+  syncCanvas();
+  initAudio();
+  loadAudio();
+
+  cancelAnimationFrame(animationId);
+  animationId = requestAnimationFrame(function frame(time) {
     animationId = requestAnimationFrame(frame);
     if (!lastFrame) lastFrame = time;
     const delta = Math.min(0.1, (time - lastFrame) / 1000);
@@ -841,37 +879,7 @@
     }
 
     render(time);
-  }
-
-  function bindUI() {
-    const rb = $('restartButton'), nb = $('nextButton'), pb = $('pauseButton');
-    if (rb) rb.addEventListener('click', restartLevel);
-    if (nb) nb.addEventListener('click', nextLevel);
-    if (pb) pb.addEventListener('click', togglePause);
-  }
-
-  canvas.style.touchAction = 'none';
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointermove', onPointerMove);
-  canvas.addEventListener('pointerup', onPointerUp);
-  canvas.addEventListener('pointercancel', onPointerUp);
-  document.addEventListener('keydown', onKeyDown);
-  document.addEventListener('keyup', onKeyUp);
-  document.addEventListener('drder:restart', restartLevel);
-  document.addEventListener('drder:pause', togglePause);
-  document.addEventListener('drder:next', nextLevel);
-  window.addEventListener('resize', () => syncCanvas());
-
-  loadProgress();
-  generateMaze();
-  bindUI();
-  updateStats();
-  syncCanvas();
-  initAudio();
-  loadAudio();
-
-  cancelAnimationFrame(animationId);
-  animationId = requestAnimationFrame(frame);
+  });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
