@@ -1,5 +1,5 @@
 /* DrDer-Light — engine.js
-   متاهة Raycasting، مفاتيح، أبواب، حفر حقيقية، أسهم خادعة، عصا تحكم مزدوجة (Dual-stick).
+   متاهة Raycasting، مفاتيح، أبواب، حفر حقيقية، أسهم خادعة، عصا تحكم مزدوجة، تعليمات أولية، مراحل لا نهائية.
 */
 (() => {
   'use strict';
@@ -8,7 +8,7 @@
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const SAVE_KEY = 'drder-light-save-v13';
+  const SAVE_KEY = 'drder-light-save-v14';
   const CRYSTAL_COUNT = 2;
   const MAZE_W = 21;
   const MAZE_H = 51;
@@ -31,6 +31,10 @@
   let animationId = 0;
   let lastFrame = 0;
 
+  // Tutorial
+  let showTutorial = true;
+  let tutorialDismissed = false;
+
   let player = { x: 1.5, y: 1.5, angle: 0 };
   let maze = [];
   let crystalsPos = [];
@@ -50,7 +54,7 @@
   const DEADZONE = 10;
 
   let moveForward = 0;
-  let moveStrength = 0; // قيمة بين 0 و 1 لشدة الحركة
+  let moveStrength = 0;
   let rotateSpeed = 0;
 
   let audioCtx = null;
@@ -92,6 +96,7 @@
     }
   }
 
+  // توليد المتاهة مع زيادة الصعوبة
   function generateMaze() {
     maze = Array.from({ length: MAZE_H }, () => Array(MAZE_W).fill(1));
     pits = [];
@@ -117,13 +122,9 @@
       stack.push(nxt);
     }
 
-    for (let y = 3; y < MAZE_H - 3; y += 4) {
-      for (let x = 1; x < MAZE_W - 1; x++) {
-        if (Math.random() > 0.4) maze[y][x] = 0;
-      }
-    }
-
-    for (let i = 0; i < 15; i++) {
+    // زيادة عدد الممرات الجانبية مع زيادة المرحلة
+    const extraPaths = Math.min(20, 10 + level * 2);
+    for (let i = 0; i < extraPaths; i++) {
       const sx = 2 + Math.floor(Math.random() * (MAZE_W - 4));
       const sy = 3 + Math.floor(Math.random() * (MAZE_H - 10));
       const len = 2 + Math.floor(Math.random() * 4);
@@ -137,7 +138,9 @@
       }
     }
 
-    for (let i = 0; i < 15; i++) {
+    // زيادة عدد الحفر مع زيادة المرحلة
+    const pitCount = Math.min(25, 10 + level * 2);
+    for (let i = 0; i < pitCount; i++) {
       const px = 3 + Math.floor(Math.random() * (MAZE_W - 6));
       const py = 5 + Math.floor(Math.random() * (MAZE_H - 10));
       if (maze[py][px] === 0 && !(px < 5 && py < 5)) {
@@ -145,7 +148,9 @@
       }
     }
 
-    for (let i = 0; i < 12; i++) {
+    // زيادة عدد الأسهم الخادعة مع زيادة المرحلة
+    const signCount = Math.min(20, 8 + level * 2);
+    for (let i = 0; i < signCount; i++) {
       const sx = 3 + Math.floor(Math.random() * (MAZE_W - 6));
       const sy = 5 + Math.floor(Math.random() * (MAZE_H - 10));
       if (maze[sy][sx] === 0) {
@@ -375,6 +380,7 @@
       }
     }
 
+    // رسم الحفر بشكل واقعي (Floor Casting مبسط)
     pits.forEach(pit => {
       const dx = pit.x - player.x, dy = pit.y - player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -382,35 +388,62 @@
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
 
-      if (Math.abs(diff) < fov / 2 && dist > 0.2 && dist < 15) {
+      if (Math.abs(diff) < fov / 2 && dist > 0.5 && dist < 12) {
         const screenX = w / 2 + Math.tan(diff) / Math.tan(fov / 2) * (w / 2);
         if (screenX >= 0 && screenX <= w) {
-          const size = Math.max(8, 60 / dist);
-          const yPos = h / 2 + (h / dist) * 0.1;
-          
-          ctx.save();
-          const pitGrad = ctx.createRadialGradient(screenX, yPos, 2, screenX, yPos, size);
-          pitGrad.addColorStop(0, '#000000');
-          pitGrad.addColorStop(0.7, '#050505');
-          pitGrad.addColorStop(1, '#111111');
-          ctx.fillStyle = pitGrad;
-          ctx.beginPath();
-          ctx.ellipse(screenX, yPos, size * 1.2, size * 0.5, 0, 0, Math.PI * 2);
-          ctx.fill();
-          
-          ctx.fillStyle = '#661111';
-          for (let s = -1; s <= 1; s++) {
+          const rayIndex = Math.floor((screenX / w) * numRays);
+          if (rayIndex >= 0 && rayIndex < numRays && depthBuffer[rayIndex] > dist - 0.5) {
+            // حساب حجم الحفرة بناءً على المسافة
+            const size = Math.max(10, 70 / dist);
+            const yPos = h / 2 + (h / dist) * 0.12;
+            
+            ctx.save();
+            // رسم الحفرة كفتحة سوداء عميقة
+            const pitGrad = ctx.createRadialGradient(screenX, yPos, 2, screenX, yPos, size);
+            pitGrad.addColorStop(0, '#000000');
+            pitGrad.addColorStop(0.6, '#000000');
+            pitGrad.addColorStop(0.85, '#0a0a0a');
+            pitGrad.addColorStop(1, '#1a1a1a');
+            ctx.fillStyle = pitGrad;
             ctx.beginPath();
-            ctx.moveTo(screenX + s * size * 0.4, yPos);
-            ctx.lineTo(screenX + s * size * 0.2, yPos - size * 0.6);
-            ctx.lineTo(screenX + s * size * 0.6, yPos);
+            ctx.ellipse(screenX, yPos, size * 1.1, size * 0.45, 0, 0, Math.PI * 2);
             ctx.fill();
+            
+            // إضافة عمق للحفرة (ظل داخلي)
+            const innerShadow = ctx.createRadialGradient(screenX, yPos - size * 0.1, 1, screenX, yPos, size * 0.8);
+            innerShadow.addColorStop(0, 'rgba(0,0,0,0.9)');
+            innerShadow.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = innerShadow;
+            ctx.beginPath();
+            ctx.ellipse(screenX, yPos, size * 0.9, size * 0.4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // أشواك حمراء داخل الحفرة (تبدو حقيقية)
+            ctx.fillStyle = '#4a0a0a';
+            for (let s = -2; s <= 2; s++) {
+              const spikeX = screenX + s * size * 0.25;
+              const spikeH = size * 0.5 * (1 - Math.abs(s) * 0.15);
+              ctx.beginPath();
+              ctx.moveTo(spikeX - size * 0.08, yPos);
+              ctx.lineTo(spikeX, yPos - spikeH);
+              ctx.lineTo(spikeX + size * 0.08, yPos);
+              ctx.fill();
+            }
+            
+            // لمعة على حافة الحفرة
+            ctx.strokeStyle = 'rgba(255, 60, 60, 0.3)';
+            ctx.lineWidth = Math.max(1, size * 0.05);
+            ctx.beginPath();
+            ctx.ellipse(screenX, yPos, size * 1.1, size * 0.45, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            ctx.restore();
           }
-          ctx.restore();
         }
       }
     });
 
+    // رسم الأسهم الخادعة
     decoySigns.forEach(s => {
       const dx = s.x - player.x, dy = s.y - player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -446,6 +479,7 @@
       }
     });
 
+    // رسم المفاتيح
     crystalsPos.forEach(c => {
       if (c.collected) return;
       const dx = c.x - player.x, dy = c.y - player.y;
@@ -474,6 +508,7 @@
       }
     });
 
+    // رسم البوابة
     const pdx = portalPos.x - player.x, pdy = portalPos.y - player.y;
     const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
     if (pdist > 0.2) {
@@ -527,6 +562,7 @@
     }
 
     drawHUD(w, h);
+    drawTutorial(w, h);
     drawSticks();
     drawMessage(w, h);
     drawOverlay(w, h);
@@ -541,6 +577,69 @@
     ctx.fillText('المفاتيح ' + crystals + '/' + CRYSTAL_COUNT, w * 0.5, 22);
     ctx.font = '600 12px sans-serif';
     ctx.fillText('المرحلة ' + level, w * 0.5, 44);
+    ctx.restore();
+  }
+
+  // رسم تعليمات اللعب الأولية
+  function drawTutorial(w, h) {
+    if (!showTutorial || tutorialDismissed) return;
+    
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    
+    // أصابع شفافة للتحكم الأيسر (التفاف)
+    const leftX = w * 0.25;
+    const leftY = h * 0.75;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.beginPath();
+    ctx.arc(leftX - 20, leftY, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(leftX + 20, leftY, 18, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // سهم يسار ويمين
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(leftX - 60, leftY);
+    ctx.lineTo(leftX - 40, leftY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(leftX + 40, leftY);
+    ctx.lineTo(leftX + 60, leftY);
+    ctx.stroke();
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('التفاف', leftX, leftY + 40);
+    
+    // أصابع شفافة للتحكم الأيمن (حركة)
+    const rightX = w * 0.75;
+    const rightY = h * 0.75;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.beginPath();
+    ctx.arc(rightX, rightY - 20, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(rightX, rightY + 20, 18, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // سهم أعلى وأسفل
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.beginPath();
+    ctx.moveTo(rightX, rightY - 60);
+    ctx.lineTo(rightX, rightY - 40);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(rightX, rightY + 40);
+    ctx.lineTo(rightX, rightY + 60);
+    ctx.stroke();
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fillText('حركة', rightX, rightY + 80);
+    
     ctx.restore();
   }
 
@@ -635,6 +734,26 @@
       ctx.fillText('المرحلة ' + level, w / 2, h * 0.42);
       ctx.font = '15px sans-serif';
       ctx.fillText('الوقت: ' + formatTime(elapsed), w / 2, h * 0.50);
+      
+      // زر الانتقال للمرحلة التالية
+      const btnW = 200;
+      const btnH = 50;
+      const btnX = w / 2 - btnW / 2;
+      const btnY = h * 0.60;
+      
+      ctx.fillStyle = 'rgba(233, 184, 63, 0.2)';
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(btnX, btnY, btnW, btnH, 10);
+      else ctx.rect(btnX, btnY, btnW, btnH);
+      ctx.fill();
+      ctx.stroke();
+      
+      ctx.fillStyle = GOLD_LIGHT;
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText('المرحلة التالية ›', w / 2, btnY + btnH / 2);
+      
       ctx.restore();
     }
   }
@@ -651,6 +770,11 @@
     if (paused || won || dead) {
       stopWalkSound();
       return;
+    }
+
+    // إخفاء التعليمات عند أول حركة
+    if (showTutorial && (moveForward !== 0 || rotateSpeed !== 0)) {
+      tutorialDismissed = true;
     }
 
     const speed = 1.2;
@@ -671,10 +795,7 @@
       player.angle += rotateSpeed * rotSpeed * dt;
     }
 
-    // تحديث سرعة صوت المشي بناءً على شدة الحركة
     if (isWalking && walkAudio) {
-      // تحويل شدة الحركة (0 إلى 1) إلى معدل تشغيل (0.5 إلى 1.5)
-      // نستخدم 0.5 كحد أدنى لتجنب كتم الصوت في بعض المتصفحات
       const rate = 0.5 + (moveStrength * 1.0);
       walkAudio.playbackRate = Math.min(1.5, Math.max(0.5, rate));
     }
@@ -805,7 +926,7 @@
     if (dist < DEADZONE) { moveForward = 0; moveStrength = 0; return; }
     const strength = Math.min(1, dist / STICK_RADIUS);
     moveForward = -(dy / dist) * strength;
-    moveStrength = strength; // حفظ شدة الحركة
+    moveStrength = strength;
   }
 
   function onRightUp(e) {
@@ -841,6 +962,8 @@
       gameUI.style.display = 'block';
       syncCanvas();
       checkOrientation();
+      showTutorial = true;
+      tutorialDismissed = false;
     }
 
     startBtn.addEventListener('click', async () => {
